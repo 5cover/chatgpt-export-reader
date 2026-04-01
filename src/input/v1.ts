@@ -9,6 +9,7 @@ const zMessage = z.object({
     children: z.array(zId),
     message: z
         .object({
+            id: zId,
             weight: z.number(),
             create_time: z.number().nullable(),
             author: z.object({
@@ -49,11 +50,12 @@ export default {
 
         return schema.parse(data).map(m => convertChat(m));
     },
-} satisfies my.InputSchema;
+} satisfies my.Input;
 
 function convertChat(m: Chat): my.Chat {
     const { messages, userInstructions } = convertMessage(m.mapping, m.mapping['client-created-root']);
     return {
+        id: m.id,
         title: m.title,
         createTime: m.create_time,
         updateTime: m.update_time,
@@ -90,6 +92,7 @@ function convertMessage(
                 messages: body
                     ? [
                           {
+                              id: m.message.id,
                               body: m.message.content.parts.join(''),
                               createTime: m.message.create_time ?? throwf('create_time null'),
                               weight: m.message.weight,

@@ -13,11 +13,16 @@
   "license": "MIT",
   "packageManager": "pnpm@10.32.1",
   "dependencies": {
+    "remark": "^15.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
     "stream-chain": "^3.6.1",
     "stream-json": "^2.1.0",
+    "unist-util-visit": "^5.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/mdast": "^4.0.4",
     "@types/node": "^25.5.0",
     "@types/stream-json": "^1.7.8",
     "typescript": "^6.0.2"

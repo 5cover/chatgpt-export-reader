@@ -1,4 +1,5 @@
 export type Chat = {
+    id: string;
     title: string;
     createTime: number;
     updateTime: number;
@@ -7,6 +8,7 @@ export type Chat = {
 };
 
 export type Message = {
+    id: string;
     role: string;
     body: string;
     weight: number;
@@ -14,6 +16,10 @@ export type Message = {
     children: Message[];
 };
 
-export type InputSchema = {
-    parse: (filename: string) => Chat[];
+export type Input = {
+    readonly parse: (filename: string) => Chat[];
+};
+
+export type Output = {
+    readonly write: (chat: Chat) => void;
 };

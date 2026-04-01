@@ -87,3 +87,52 @@ Basically
 
 - streaming JSON array parse (multiple chats)
 - increment Markdown headings to match output document hierarcy
+
+converting a chat tree to markdown files:
+
+what do we do when we hit multiple children?
+multiple files with continuation point
+
+Title.md
+
+```md
+## 1. Assistant
+
+Message 1
+
+Branches:
+
+[Child message 2](./Title.Child message 2.md)
+[Child message 3](./Title.Child message 3.md)
+
+## 2. User
+
+Child message 1
+
+```
+
+Title.Child message 2.md
+
+```md
+# Title > Child message 2..
+
+[Source](<./Title.md#1. assistant>)
+
+Message 1
+
+## 1.1 Assistant
+
+## 1.2
+```
+
+Create branch-off file only if child message also has children
+
+algorithm:
+
+- walk tree of messages
+- keep longest branch in current file
+- create new files for other branches
+
+how do we return the documents?
+we return
+Document = { title: string, messages: Message[], branches: Document[] }
