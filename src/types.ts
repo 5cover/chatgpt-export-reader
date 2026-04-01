@@ -12,12 +12,20 @@ export type Message = {
     role: string;
     body: string;
     weight: number;
-    createTime: number;
+    createTime?: number;
+    model?: string;
     children: Message[];
+    thoughts?: Thought[];
+};
+
+export type Thought = {
+    summary: string;
+    content: string;
+    chunks: string[];
 };
 
 export type Input = {
-    readonly parse: (filename: string) => Chat[];
+    readonly parse: (filename: string) => AsyncGenerator<Chat>;
 };
 
 export type Output = {
