@@ -56,12 +56,11 @@ function toMarkdown(lin: LinearDocument): string {
         ]);
     }
     for (const msg of lin.messages) {
-        d.h(2, msg.id)
-            .p([
-                `${msg.message.role} @ ${datetime(msg.message.createTime)} weight ${msg.message.weight}, id `,
-                d.code(msg.message.id),
-            ])
-            .compose(msg.message.body);
+        d.h(2, msg.id).p([
+            `${msg.message.role} @ ${datetime(msg.message.createTime)} weight ${msg.message.weight}, id `,
+            d.code(msg.message.id),
+        ]);
+
         if (msg.branches) {
             d.p('Branches:');
             d.list(
@@ -76,6 +75,7 @@ function toMarkdown(lin: LinearDocument): string {
                 }),
             );
         }
+        d.compose(msg.message.body);
     }
     return d.toString();
 }

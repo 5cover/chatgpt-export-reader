@@ -103,8 +103,6 @@ function walk(node: Message, ctx: Ctx): void {
     });
 }
 
-// ---- helpers ----
-
 function subtreeSize(node: Message): number {
     let count = 1;
     for (const child of node.children) {

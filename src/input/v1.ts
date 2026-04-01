@@ -3,7 +3,7 @@ import type * as my from '../types.js';
 import { readFileSync } from 'node:fs';
 
 const zId = z.string().nonempty();
-
+const zTimestamp = z.number().transform(x => x * 1000);
 type Message = z.infer<typeof zMessage>;
 const zMessage = z.object({
     children: z.array(zId),
@@ -11,7 +11,7 @@ const zMessage = z.object({
         .object({
             id: zId,
             weight: z.number(),
-            create_time: z.number().nullable(),
+            create_time: zTimestamp.nullable(),
             author: z.object({
                 role: z.string(),
             }),
@@ -33,8 +33,8 @@ type Chat = z.infer<typeof zChat>;
 const zChat = z.object({
     id: zId,
     title: z.string(),
-    create_time: z.number(),
-    update_time: z.number(),
+    create_time: zTimestamp,
+    update_time: zTimestamp,
     mapping: z.record(zId, zMessage).and(
         z.object({
             'client-created-root': zMessage,

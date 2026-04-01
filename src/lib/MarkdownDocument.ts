@@ -5,20 +5,20 @@ import { visit } from 'unist-util-visit';
 import type * as md from 'mdast';
 
 type SubdocumentInput = string | md.Root | MarkdownDocument;
-
+type HeadingDepth = 1 | 2 | 3 | 4 | 5 | 6;
 type ListInput = Input<md.BlockContent | md.PhrasingContent, md.PhrasingContent>[];
 type Input<T, U = T> = T | string | (U | string)[];
 
 export class MarkdownDocument {
     private tree: md.Root;
-
+    private lastHeadingDepth = 0;
     constructor(input?: string | md.Root) {
         if (!input) {
             this.tree = { type: 'root', children: [] };
         } else if (typeof input === 'string') {
             this.tree = MarkdownDocument.parse(input);
         } else {
-            this.tree = structuredClone(input);
+            this.tree = input;
         }
     }
 
@@ -35,11 +35,12 @@ export class MarkdownDocument {
     }
 
     root(): md.Root {
-        return structuredClone(this.tree);
+        return this.tree;
     }
 
-    h(depth: number, value: string): this {
+    h(depth: HeadingDepth, value: string): this {
         this.tree.children.push(heading(depth, value));
+        this.lastHeadingDepth = depth;
         return this;
     }
 
@@ -76,24 +77,22 @@ export class MarkdownDocument {
     }
 
     raw(node: md.RootContent): this {
-        this.tree.children.push(structuredClone(node));
+        this.tree.children.push(node);
         return this;
     }
 
     compose(input: SubdocumentInput, options?: { mode?: 'relative' | 'absolute'; baseDepth?: number }): this {
-        const imported = this.normalizeSubdocument(input);
-        const offset =
-            options?.mode === 'absolute'
-                ? this.computeAbsoluteOffset(imported, options.baseDepth ?? 1)
-                : this.computeRelativeOffset();
+        const imported = normalizeSubdocument(input);
 
-        const adjusted = structuredClone(imported);
-
-        visit(adjusted, 'heading', (node: md.Heading) => {
-            node.depth = clampHeadingDepth(node.depth + offset);
+        let oldh = 0;
+        let newh = 1 + this.lastHeadingDepth;
+        visit(imported, 'heading', (node: md.Heading) => {
+            newh += node.depth - (oldh || node.depth);
+            oldh = node.depth;
+            node.depth = clampDepth(newh);
         });
 
-        this.tree.children.push(...adjusted.children);
+        this.tree.children.push(...imported.children);
         return this;
     }
 
@@ -127,40 +126,12 @@ export class MarkdownDocument {
             value,
         };
     }
-
-    private normalizeSubdocument(input: SubdocumentInput): md.Root {
-        if (typeof input === 'string') return MarkdownDocument.parse(input);
-        if (input instanceof MarkdownDocument) return input.root();
-        return structuredClone(input);
-    }
-
-    private computeRelativeOffset(): number {
-        const last = this.findLastHeadingDepth();
-        return last ?? 0;
-    }
-
-    private computeAbsoluteOffset(imported: md.Root, baseDepth: number): number {
-        const firstImportedHeading = this.findFirstHeadingDepth(imported);
-        if (!firstImportedHeading) return 0;
-        return baseDepth - firstImportedHeading;
-    }
-
-    private findLastHeadingDepth(): number | null {
-        for (let i = this.tree.children.length - 1; i >= 0; i--) {
-            const node = this.tree.children[i];
-            if (node?.type === 'heading') return node.depth;
-        }
-        return null;
-    }
-
-    private findFirstHeadingDepth(root: md.Root): number | null {
-        for (const node of root.children) {
-            if (node.type === 'heading') return node.depth;
-        }
-        return null;
-    }
 }
-
+function normalizeSubdocument(input: SubdocumentInput): md.Root {
+    if (typeof input === 'string') return MarkdownDocument.parse(input);
+    if (input instanceof MarkdownDocument) return input.root();
+    return input;
+}
 function wrapBlock(node: Input<md.BlockContent | md.PhrasingContent, md.PhrasingContent>): md.BlockContent[] {
     return typeof node === 'string'
         ? [paragraph([text(node)])]
@@ -199,14 +170,14 @@ function paragraph(children: md.PhrasingContent[]): md.Paragraph {
     };
 }
 
-function heading(depth: number, value: string): md.Heading {
+function heading(depth: HeadingDepth, value: string): md.Heading {
     return {
         type: 'heading',
-        depth: clampHeadingDepth(depth),
+        depth,
         children: [text(value)],
     };
 }
 
-function clampHeadingDepth(depth: number): 1 | 2 | 3 | 4 | 5 | 6 {
-    return Math.max(1, Math.min(6, depth)) as 1 | 2 | 3 | 4 | 5 | 6;
+function clampDepth(x: number): HeadingDepth {
+    return x < 1 ? 1 : x > 6 ? 6 : (x as HeadingDepth);
 }
