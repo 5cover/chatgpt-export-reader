@@ -105,9 +105,7 @@ function toMarkdown(lin: LinearDocument): string {
     }
     for (const m of lin.messages) {
         const instructionNo =
-            m.message.customInstructions !== undefined && instructions.get(m.message.customInstructions)
-        if (m.message.customInstructions !== undefined)
-            instructions.set(m.message.customInstructions, instructions.size + 1)
+            !m.message.customInstructions ? undefined : getInstructionNo(m.message.customInstructions)
 
         d.h(2, m.id).p([
             md.code(m.message.id),
@@ -117,13 +115,7 @@ function toMarkdown(lin: LinearDocument): string {
             m.message.createTime !== undefined && md.time(m.message.createTime),
             ` : w${m.message.weight}`,
             typeof instructionNo == 'number' ?
-                [
-                    ' : instruction ',
-                    md.link(
-                        { url: `#instruction-${instructionNo}`, title: m.message.customInstructions },
-                        instructionNo.toString(),
-                    ),
-                ]
+                [' : instruction ', md.link({ url: `#instruction-${instructionNo}` }, instructionNo.toString())]
             :   null,
         ])
 
@@ -166,6 +158,15 @@ function toMarkdown(lin: LinearDocument): string {
         }
     }
     return d.toString()
+
+    function getInstructionNo(instr: string) {
+        const existing = instructions.get(instr)
+        if (existing !== undefined) return existing
+
+        const assigned = instructions.size + 1
+        instructions.set(instr, assigned)
+        return assigned
+    }
 }
 
 function docFilename(d: LinearDocument) {

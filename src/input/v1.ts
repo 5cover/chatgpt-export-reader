@@ -127,9 +127,7 @@ function convertChat(m: Chat): my.Chat {
         title: m.title,
         createTime: m.create_time,
         updateTime: m.update_time,
-        messages: convertMessage(m.mapping, root, {
-            seen: new Set(),
-        }),
+        messages: convertMessages(m.mapping, root),
         projectName: m.conversation_template_id ?? undefined,
         isArchived: m.is_archived ?? false,
     }
@@ -143,20 +141,88 @@ function findRoot(m: Chat['mapping']) {
         const parentId = msg.parent
         if (parentId === null) {
             if (root !== null) throwf(`root already found at ${rootId}, but ${id} also has null parent`)
-            rootId = parentId
+            rootId = id
             root = msg
         }
     }
     return root ?? throwf(`no root message found`)
 }
 
-function convertMessage(
-    msgs: Chat['mapping'],
+function convertMessages(msgs: Chat['mapping'], root: Message): my.Message[] {
+    type Ctx = { customInstructions?: string }
+    type Frame = {
+        msg: Message
+        ctx: Ctx
+        childIndex: number | null
+        parent?: Frame
+        state: 'enter' | 'exit'
+        childrenCtx?: Ctx
+        childResults?: my.Message[][]
+        result?: my.Message[]
+    }
+
+    const stack: Frame[] = [{ msg: root, ctx: {}, childIndex: null, state: 'enter' }]
+    const path = new Set<string>()
+    let finalResult: my.Message[] | undefined
+
+    while (stack.length > 0) {
+        const frame = stack.pop()!
+        if (frame.state === 'enter') {
+            if (path.has(frame.msg.id)) throwf(`message cycle on ${frame.msg.id}`)
+            path.add(frame.msg.id)
+
+            const childrenCtx = nextContext(frame.msg, frame.ctx)
+            frame.state = 'exit'
+            frame.childrenCtx = childrenCtx
+            frame.childResults = new Array(frame.msg.children.length)
+            stack.push(frame)
+
+            for (let i = frame.msg.children.length - 1; i >= 0; i--) {
+                const childId = frame.msg.children[i]!
+                const child = msgs[childId] ?? throwf(`children message not found: ${childId}`)
+                stack.push({ msg: child, ctx: childrenCtx, childIndex: i, parent: frame, state: 'enter' })
+            }
+            continue
+        }
+
+        path.delete(frame.msg.id)
+        if (frame.childResults === undefined) throwf(`missing child results for ${frame.msg.id}`)
+
+        const children = frame.childResults.flatMap(x => x)
+        frame.result = materializeMessage(frame.msg, frame.ctx, children)
+
+        if (stack.length === 0) {
+            finalResult = frame.result
+            continue
+        }
+
+        const parent = frame.parent
+        if (parent === undefined) throwf(`missing parent for ${frame.msg.id}`)
+        if (parent.state !== 'exit' || parent.childResults === undefined) {
+            throwf(`invalid traversal state for ${frame.msg.id}`)
+        }
+        if (frame.childIndex === null) throwf(`missing child index for ${frame.msg.id}`)
+        parent.childResults[frame.childIndex] = frame.result
+    }
+
+    return finalResult ?? []
+}
+
+function nextContext(m: Message, ctx: { customInstructions?: string }) {
+    if (m.message?.content.content_type === 'user_editable_context') {
+        return {
+            ...ctx,
+            customInstructions: m.message.content.user_instructions,
+        }
+    }
+    return ctx
+}
+
+function materializeMessage(
     m: Message,
-    ctx: { customInstructions?: string; seen: Set<string> },
+    ctx: { customInstructions?: string },
+    children: my.Message[],
 ): my.Message[] {
-    if (ctx.seen.has(m.id)) throwf(`message cycle on ${m.id}`)
-    ctx.seen.add(m.id)
     switch (m.message?.content.content_type) {
         case 'text':
             return messages(m.message.content.parts.join(''))
@@ -166,31 +232,13 @@ function convertMessage(
             return messages(`\`\`\`${m.message.content.language}
 ${m.message.content.text}
 \`\`\``)
-        case 'user_editable_context':
-            return childrenMessages({
-                seen: ctx.seen,
-                customInstructions: m.message.content.user_instructions,
-            })
-        case 'thoughts': {
-            const cm = childrenMessages()
-            // assert one children, attach thoughts to next message
-            if (cm[0]) cm[0].thoughts = m.message.content.thoughts
-            return cm
-        }
+        case 'thoughts':
+            if (children[0]) children[0].thoughts = m.message.content.thoughts
+            return children
         default:
-            return childrenMessages()
+            return children
     }
-    function childrenMessages(newctx?: typeof ctx) {
-        return m.children
-            .map(id =>
-                convertMessage(
-                    msgs,
-                    msgs[id] ?? throwf(`children message not found: ${id}`),
-                    newctx ? { ...ctx, ...newctx } : ctx,
-                ),
-            )
-            .flatMap(c => c)
-    }
+
     function messages(body: string): my.Message[] {
         return m.message && body ?
                 [
@@ -205,10 +253,10 @@ ${m.message.content.text}
                                 .filter(x => x !== undefined)
                                 .join(' ') || undefined,
                         role: m.message.author.role,
-                        children: childrenMessages(),
+                        children,
                     },
                 ]
-            :   childrenMessages()
+            :   children
     }
 }
 
