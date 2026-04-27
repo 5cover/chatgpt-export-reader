@@ -2,13 +2,20 @@
 
 Turns ChatGPT data exports into Markdown documents for easy browsing.
 
+## Step 3
+
+- Max label size configurable (default 50)
+- Clean CLI (commander + commander extra typings)
+- Customize message parsing (hardcoded codeblock backticks, etc... what if user configured answers in asciidoc? user should be able to provide a response body parser that turns it into markdown ast (using markdown builder optionally))
+- Images
+
 ## Step 2
 
-- Images
-- Debug singleton array problem with chat.json
-- Projects?
+- Debug singleton array problem with chat.json : multiple root messages?
+- Archived projects
+- Projects? see gizmo_id/conversation_template_id (seem to always sync, use conversation_template_id). that gets us the ID, but where is the project label
 
-## Step 1
+## ~~Step 1~~
 
 - streaming JSON array parse (multiple chats)
 - increment Markdown headings to match output document hierarcy
@@ -62,8 +69,7 @@ how do we return the documents?
 we return
 Document = { title: string, messages: Message[], branches: Document[] }
 
-
-## Step 0
+## ~~Step 0~~
 
 Extract one chat object.
 
@@ -96,9 +102,9 @@ since some mesage contain userInstructions, other contain text
 an iterative non recurisve approach.
 
 Basically
+
 - Input: flat array of Message[]. content may be null (bubble children up), user_editable_text (set userInstructions)
 - Output: { message: my.Message, userInstructions: string | null,  }
-
 
 Objective :
 
