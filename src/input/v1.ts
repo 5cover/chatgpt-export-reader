@@ -212,17 +212,13 @@ function nextContext(m: Message, ctx: { customInstructions?: string }) {
     if (m.message?.content.content_type === 'user_editable_context') {
         return {
             ...ctx,
-            customInstructions: m.message.content.user_instructions,
+            customInstructions: m.message.content.user_instructions.replaceAll('```', ''),
         }
     }
     return ctx
 }
 
-function materializeMessage(
-    m: Message,
-    ctx: { customInstructions?: string },
-    children: my.Message[],
-): my.Message[] {
+function materializeMessage(m: Message, ctx: { customInstructions?: string }, children: my.Message[]): my.Message[] {
     switch (m.message?.content.content_type) {
         case 'text':
             return messages(m.message.content.parts.join(''))

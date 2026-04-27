@@ -1,8 +1,8 @@
 import { DefaultPrimitiveMap } from '@5cover/moremaps'
 import { mkdir, writeFile } from 'fs/promises'
 import p from 'path'
+import { FastMarkdown, inlineCode, link, shiftMarkdownHeadings, time } from '../lib/fast-markdown.js'
 import { linearizeChat, type LinearDocument } from '../lib/linearizer.js'
-import * as md from '../lib/markdown-builder.js'
 import { mapfilter, sanitize, type Falsey } from '../lib/util.js'
 import type { Chat, Output } from '../types.js'
 export type Options = {
@@ -48,8 +48,10 @@ export default class Markdown implements Output {
 
     private async writeFile(dirname: string, file: { name?: string; ext?: string }, content: string) {
         const path = file.name ? p.join(dirname, file.name) : dirname
-        await this.mkdir(file.name ? dirname : p.dirname(dirname))
-        await writeFile(path + (file.ext ?? ''), content)
+        const dir = file.name ? dirname : p.dirname(dirname)
+        if (!dirsMade.has(dir)) await this.mkdir(dir)
+        const final = file.ext ? path + file.ext : path
+        void writeFile(final, content).catch((e: unknown) => console.error(`failed to write ${final}: ${String(e)}`))
     }
 
     private deduplicatePath(name: string) {
@@ -65,7 +67,6 @@ export default class Markdown implements Output {
     }
 
     private async mkdir(path: string) {
-        if (dirsMade.has(path)) return
         try {
             await mkdir(path, { recursive: true })
         } catch (e: unknown) {
@@ -78,50 +79,41 @@ export default class Markdown implements Output {
 
 function toMarkdown(lin: LinearDocument): string {
     const instructions = new Map<string, number>()
-    const d = new md.Builder()
-    d.h(
-        1,
-        lin.parent ?
-            [`${lin.id}: `, d.parse(lin.parent.document.title, md.contentGuards.phrasing)]
-        :   d.parse(lin.title, md.contentGuards.phrasing),
-    )
+    const d = new FastMarkdown()
+
+    d.heading(1, lin.parent ? `${lin.id}: ${lin.parent.document.title}` : lin.title)
+
     if (lin.chat) {
-        d.ul([
-            ['Chat ID: ', md.code(lin.chat.id)],
-            ['Created: ', md.time(lin.chat.createTime)],
-            ['Updated: ', md.time(lin.chat.updateTime)],
+        d.list([
+            `Chat ID: ${inlineCode(lin.chat.id)}`,
+            `Created: ${time(lin.chat.createTime)}`,
+            `Updated: ${time(lin.chat.updateTime)}`,
         ])
     }
     if (lin.parent) {
         const p = lin.parent
-        d.p(
-            md.link(
-                {
-                    url: `./${docFilename(p.document)}#${p.messageId}`,
-                },
-                `${p.document.title}@${p.messageId}`,
-            ),
-        )
+        d.paragraph(link(`./${docFilename(p.document)}#${p.messageId}`, `${p.document.title}@${p.messageId}`))
     }
-    for (const m of lin.messages) {
-        const instructionNo =
-            !m.message.customInstructions ? undefined : getInstructionNo(m.message.customInstructions)
 
-        d.h(2, m.id).p([
-            md.code(m.message.id),
+    for (const m of lin.messages) {
+        const instructionNo = !m.message.customInstructions ? undefined : getInstructionNo(m.message.customInstructions)
+
+        d.heading(2, m.id)
+        d.paragraph([
+            inlineCode(m.message.id),
             ` : ${m.message.role}`,
             m.message.model && ` (${m.message.model})`,
             ' @ ',
-            m.message.createTime !== undefined && md.time(m.message.createTime),
+            m.message.createTime !== undefined && time(m.message.createTime),
             ` : w${m.message.weight}`,
             typeof instructionNo == 'number' ?
-                [' : instruction ', md.link({ url: `#instruction-${instructionNo}` }, instructionNo.toString())]
+                [' : instruction ', link(`#instruction-${instructionNo}`, instructionNo.toString())]
             :   null,
         ])
 
         if (m.branches) {
-            d.h(3, 'Branches')
-            d.ul(
+            d.heading(3, 'Branches')
+            d.list(
                 m.branches.map(b => {
                     let title = b.title
                     let url = docFilename(b)
@@ -129,32 +121,28 @@ function toMarkdown(lin: LinearDocument): string {
                         title += ` - ${b.messages[0].message.body.slice(0, 50)}`
                         url += `#${b.messages[0].id}`
                     }
-                    return md.link({ url: `./${url})` }, title)
+                    return link(`./${url}`, title)
                 }),
             )
         }
         if (m.message.thoughts) {
-            d.h(3, 'Thoughts')
+            d.heading(3, 'Thoughts')
             for (const thought of m.message.thoughts) {
-                d.raw(d.parse(thought.summary))
-                d.raw(d.parse(thought.content))
-                d.ul(
-                    thought.chunks.map(chunk =>
-                        d.parse(chunk, n => md.contentGuards.phrasing(n) || md.contentGuards.block(n)),
-                    ),
-                )
+                d.markdown(thought.summary, 3)
+                d.markdown(thought.content, 3)
+                d.list(thought.chunks.map(chunk => shiftMarkdownHeadings(chunk, 3).trimEnd()))
             }
         }
         if (m.branches || m.message.thoughts) {
-            d.hr()
+            d.thematicBreak()
         }
-        d.raw(d.parse(m.message.body))
+        d.markdown(m.message.body, 2)
     }
     if (instructions.size) {
-        d.h(2, 'Instructions')
+        d.heading(2, 'Instructions')
         for (const [instr, no] of instructions) {
-            d.h(3, `Instruction ${no}`)
-            d.raw(d.parse(instr))
+            d.heading(3, `Instruction ${no}`)
+            d.markdown(instr, 3)
         }
     }
     return d.toString()

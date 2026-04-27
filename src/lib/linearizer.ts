@@ -17,6 +17,7 @@ export type LinearMessage = {
 
 export function linearizeChat(chat: Chat): LinearDocument[] {
     const docs: LinearDocument[] = []
+    const subtreeSizes = new WeakMap<Message, number>()
 
     const mainDoc: LinearDocument = {
         id: '',
@@ -33,6 +34,7 @@ export function linearizeChat(chat: Chat): LinearDocument[] {
             currentDoc: mainDoc,
             prefix: '', // "", "3a", "3a.2a"
             counter: 1,
+            subtreeSizes,
         })
     }
 
@@ -44,6 +46,7 @@ type Ctx = {
     currentDoc: LinearDocument
     prefix: string // branch prefix
     counter: number // local message counter
+    subtreeSizes: WeakMap<Message, number>
 }
 
 function walk(node: Message, ctx: Readonly<Ctx>): void {
@@ -67,7 +70,9 @@ function walk(node: Message, ctx: Readonly<Ctx>): void {
     }
 
     // multiple children → branching
-    const sorted = [...node.children].sort((a, b) => subtreeSize(b) - subtreeSize(a))
+    const sorted = [...node.children].sort(
+        (a, b) => subtreeSize(b, ctx.subtreeSizes) - subtreeSize(a, ctx.subtreeSizes),
+    )
 
     const mainChild = sorted[0]!
     const altChildren = sorted.slice(1)
@@ -104,11 +109,15 @@ function walk(node: Message, ctx: Readonly<Ctx>): void {
     })
 }
 
-function subtreeSize(node: Message): number {
+function subtreeSize(node: Message, memo: WeakMap<Message, number>): number {
+    const cached = memo.get(node)
+    if (cached !== undefined) return cached
+
     let count = 1
     for (const child of node.children) {
-        count += subtreeSize(child)
+        count += subtreeSize(child, memo)
     }
+    memo.set(node, count)
     return count
 }
 

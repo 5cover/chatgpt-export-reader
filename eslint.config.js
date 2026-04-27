@@ -27,9 +27,10 @@ export default [
                 'error',
                 {
                     allowNumber: true,
-                    allowNullish: true
-                }
-            ]
+                    allowNullish: true,
+                },
+            ],
+            '@typescript-eslint/no-confusing-void-expression': 'off',
         },
     },
 ]
