@@ -12,9 +12,11 @@
   "keywords": [],
   "author": "",
   "license": "MIT",
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@11.5.1",
   "dependencies": {
     "@5cover/moremaps": "^1.1.0",
+    "@commander-js/extra-typings": "^14.0.0",
+    "commander": "^14.0.2",
     "remark": "^15.0.1",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",

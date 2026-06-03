@@ -26,11 +26,17 @@ export type Thought = {
     chunks: string[]
 }
 
+export type ArtifactTree = Map<string, string | ArtifactTree>
+
 export type Input = {
     readonly parseFile: (filename: string) => AsyncGenerator<Chat>
     readonly parse: (exportDir: string) => AsyncGenerator<Chat>
 }
 
-export type Output = {
-    readonly write: (chats: AsyncIterable<Chat>) => Promise<void>
+export type OutputFormat = {
+    readonly render: (chats: AsyncIterable<Chat>) => Promise<ArtifactTree>
+}
+
+export type Exporter = {
+    readonly export: (artifacts: ArtifactTree) => Promise<void>
 }

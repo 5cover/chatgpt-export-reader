@@ -30,7 +30,7 @@ export type Falsey = null | undefined | false | 0 | '' | 0n
 export const PATH_MAXLEN = 60
 export const TITLE_MAXLEN = 120
 
-export function sanitize(filename: string, ext: string = '') {
+export function sanitize(filename: string, ext = '') {
     return tersen(sanitizeFilename(filename, { replacement: ' ' }), PATH_MAXLEN - ext.length) + ext
 }
 

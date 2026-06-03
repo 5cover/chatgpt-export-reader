@@ -1,5 +1,7 @@
 import type { Chat, Message } from '../types.js'
-import { tersen, TITLE_MAXLEN } from './util.js'
+import type { ArtifactTree } from '../types.js'
+import { sanitize, tersen, TITLE_MAXLEN } from './util.js'
+import { artifactTree } from '../output/artifact-tree.js'
 
 export type LinearDocument = {
     id: string
@@ -39,6 +41,32 @@ export function linearizeChat(chat: Chat): LinearDocument[] {
     }
 
     return docs
+}
+
+export function renderLinearChatArtifacts(
+    chat: Chat,
+    renderDocument: (document: LinearDocument) => string,
+    extension: string,
+): { name: string; artifact: string | ArtifactTree } {
+    const docs = linearizeChat(chat)
+    if (docs.length === 0) throw new Error(`no documents linearized for chat: ${chat.title}`)
+
+    if (docs.length === 1) {
+        return {
+            name: sanitize(chat.title, extension),
+            artifact: renderDocument(docs[0]!),
+        }
+    }
+
+    const tree = artifactTree()
+    for (const doc of docs) {
+        tree.set(documentFilename(doc, extension), renderDocument(doc))
+    }
+
+    return {
+        name: sanitize(chat.title),
+        artifact: tree,
+    }
 }
 
 type Ctx = {
@@ -125,4 +153,8 @@ function makeBranchId(prefix: string, index: number, altIdx: number): string {
     const letter = String.fromCharCode(97 + altIdx) // a, b, c...
     const base = prefix ? `${prefix}.${index}` : String(index)
     return `${base}${letter}`
+}
+
+function documentFilename(document: LinearDocument, extension: string) {
+    return sanitize(`${document.id ? `${document.id}.` : ''}${document.title}`, extension)
 }

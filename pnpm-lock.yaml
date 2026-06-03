@@ -11,6 +11,12 @@ importers:
       '@5cover/moremaps':
         specifier: ^1.1.0
         version: 1.1.0
+      '@commander-js/extra-typings':
+        specifier: ^14.0.0
+        version: 14.0.0(commander@14.0.3)
+      commander:
+        specifier: ^14.0.2
+        version: 14.0.3
       remark:
         specifier: ^15.0.1
         version: 15.0.1
@@ -65,6 +71,11 @@ packages:
 
   '@5cover/moremaps@1.1.0':
     resolution: {integrity: sha512-a4CkG0O50ueZUfmRswU1Tbr9sR3c08omuQ1GFEw7EVsfOI5n+qbIJv6V6nscV8/k8ptxlEby/BE108PpCGYN0Q==}
+
+  '@commander-js/extra-typings@14.0.0':
+    resolution: {integrity: sha512-hIn0ncNaJRLkZrxBIp5AsW/eXEHNKYQBh0aPdoUqNgD+Io3NIykQqpKFyKcuasZhicGaEZJX/JBSIkZ4e5x8Dg==}
+    peerDependencies:
+      commander: ~14.0.0
 
   '@eslint-community/eslint-utils@4.9.1':
     resolution: {integrity: sha512-phrYmNiYppR7znFEdqgfWHXR6NCkZEK7hwWDHZUjit/2/U0r6XvkDl0SYnoM51Hq7FhCGdLDT6zxCCOY1hexsQ==}
@@ -249,6 +260,10 @@ packages:
 
   character-entities@2.0.2:
     resolution: {integrity: sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ==}
+
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -651,6 +666,10 @@ snapshots:
 
   '@5cover/moremaps@1.1.0': {}
 
+  '@commander-js/extra-typings@14.0.0(commander@14.0.3)':
+    dependencies:
+      commander: 14.0.3
+
   '@eslint-community/eslint-utils@4.9.1(eslint@10.2.1)':
     dependencies:
       eslint: 10.2.1
@@ -851,6 +870,8 @@ snapshots:
       balanced-match: 4.0.4
 
   character-entities@2.0.2: {}
+
+  commander@14.0.3: {}
 
   cross-spawn@7.0.6:
     dependencies:

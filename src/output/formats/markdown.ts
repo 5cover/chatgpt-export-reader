@@ -1,80 +1,44 @@
-import { DefaultPrimitiveMap } from '@5cover/moremaps'
-import { mkdir, writeFile } from 'fs/promises'
-import p from 'path'
-import { FastMarkdown, inlineCode, link, shiftMarkdownHeadings, time } from '../lib/fast-markdown.js'
-import { linearizeChat, type LinearDocument } from '../lib/linearizer.js'
-import { mapfilter, sanitize, type Falsey } from '../lib/util.js'
-import type { Chat, Output } from '../types.js'
-export type Options = {
-    directory: string
+import { FastMarkdown, inlineCode, link, shiftMarkdownHeadings, time } from '../../lib/fast-markdown.js'
+import { renderLinearChatArtifacts, type LinearDocument } from '../../lib/linearizer.js'
+import { mapfilter, sanitize, type Falsey } from '../../lib/util.js'
+import type { ArtifactTree, Chat, OutputFormat } from '../../types.js'
+import { addArtifact, artifactTree, deduplicateName, isArtifactTree } from '../artifact-tree.js'
+
+export default class MarkdownOutput implements OutputFormat {
+    async render(chats: AsyncIterable<Chat>): Promise<ArtifactTree> {
+        const root = artifactTree()
+
+        for await (const chat of chats) {
+            const { name, artifact } = renderLinearChatArtifacts(chat, toMarkdown, '.md')
+            const directory = ensureDirectory(
+                root,
+                mapfilter<string | Falsey, string | Falsey, string>(
+                    [chat.isArchived && 'archived', chat.projectName],
+                    segment => segment && sanitize(segment),
+                    (segment): segment is string => !!segment,
+                ),
+            )
+            addArtifact(directory, [deduplicateName(directory, name)], artifact)
+        }
+
+        return root
+    }
 }
 
-const dirsMade = new Set<string>()
-
-export default class Markdown implements Output {
-    private readonly dir: string
-    constructor(options: Options) {
-        this.dir = p.resolve(options.directory)
-    }
-
-    private readonly seenPaths = new DefaultPrimitiveMap<string, number>(() => 0)
-
-    async write(chats: AsyncIterable<Chat>) {
-        for await (const chat of chats) {
-            console.log(chat.title)
-            this.writeChat(chat)
+function ensureDirectory(root: ArtifactTree, path: readonly string[]): ArtifactTree {
+    let current = root
+    for (const segment of path) {
+        const existing = current.get(segment)
+        if (existing === undefined) {
+            const next = artifactTree()
+            current.set(segment, next)
+            current = next
+            continue
         }
+        if (!isArtifactTree(existing)) throw new Error(`artifact path conflict at ${segment}`)
+        current = existing
     }
-
-    private writeChat(chat: Chat) {
-        const docs = linearizeChat(chat)
-        const dirname = this.deduplicatePath(
-            p.join(
-                this.dir,
-                ...mapfilter<string | Falsey, string | Falsey, string>(
-                    [chat.isArchived && 'archived', chat.projectName, chat.title],
-                    d => d && sanitize(d),
-                    (d): d is string => !!d,
-                ),
-            ),
-        )
-        if (docs.length === 0) throw new Error(`no documents linearized for chat: ${chat.title}`)
-        if (docs.length === 1) {
-            void this.writeFile(dirname, { ext: '.md' }, toMarkdown(docs[0]!))
-        } else {
-            void docs.map(doc => this.writeFile(dirname, { name: docFilename(doc) }, toMarkdown(doc)))
-        }
-    }
-
-    private async writeFile(dirname: string, file: { name?: string; ext?: string }, content: string) {
-        const path = file.name ? p.join(dirname, file.name) : dirname
-        const dir = file.name ? dirname : p.dirname(dirname)
-        if (!dirsMade.has(dir)) await this.mkdir(dir)
-        const final = file.ext ? path + file.ext : path
-        void writeFile(final, content).catch((e: unknown) => console.error(`failed to write ${final}: ${String(e)}`))
-    }
-
-    private deduplicatePath(name: string) {
-        const n = this.seenPaths.get(name)
-        const prepared = `${name}${
-            n ?
-                name ? ` ${n}`
-                :   n
-            :   ''
-        }`
-        this.seenPaths.map(prepared, n => n + 1)
-        return prepared
-    }
-
-    private async mkdir(path: string) {
-        try {
-            await mkdir(path, { recursive: true })
-        } catch (e: unknown) {
-            // https://nodejs.org/docs/latest-v25.x/api/errors.html#class-systemerror
-            if ((e as { code: string }).code !== 'EEXIST') throw e
-        }
-        dirsMade.add(path)
-    }
+    return current
 }
 
 function toMarkdown(lin: LinearDocument): string {
