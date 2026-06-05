@@ -12,7 +12,7 @@ const zTimestamp = z.number().transform(x => x * 1000)
 
 type MessagePayload = z.infer<typeof MessagePayload>
 const MessagePayload = z.object({
-    weight: z.number(),
+    weight: z.number().optional(),
     create_time: zTimestamp.nullable(),
     author: z.object({
         role: z.string(),
@@ -59,17 +59,19 @@ const MessagePayload = z.object({
             content_type: z.enum(['tether_browsing_display', 'tether_quote', 'system_error']),
         }),
     ]),
-    metadata: z.object({
-        model_slug: z.string().optional(),
-        thinking_effort: z.string().optional(),
-    }),
+    metadata:
+        z
+            .object({
+                model_slug: z.string().optional(),
+                thinking_effort: z.string().optional(),
+            })
+            .optional(),
 })
 
 type Message = z.infer<typeof zMessage>
 const zMessage = z.object({
     id: zId,
     parent: zId.nullable(),
-    children: z.array(zId),
     message: MessagePayload.nullable(),
 })
 
@@ -107,9 +109,10 @@ async function* parseFile(filename: fs.PathLike): AsyncGenerator<my.Chat> {
     ]) as AsyncIterable<StreamArrayItem>
     for await (const chunk of pipeline) {
         const raw = chunk.value as unknown
+        if (isSkippableChunk(raw)) continue
         const result = zChat.safeParse(raw)
         if (!result.success) {
-            console.error('Invalid chat at array index', chunk.key, result.error, JSON.stringify(raw))
+            console.error(`Invalid chat at array index ${String(chunk.key)}: ${result.error.message}`)
             continue
         }
         try {
@@ -122,12 +125,13 @@ async function* parseFile(filename: fs.PathLike): AsyncGenerator<my.Chat> {
 }
 function convertChat(m: Chat): my.Chat {
     const root = findRoot(m.mapping)
+    const childrenByParent = indexChildren(m.mapping)
     return {
         id: m.id,
         title: m.title,
         createTime: m.create_time,
         updateTime: m.update_time,
-        messages: convertMessages(m.mapping, root),
+        messages: convertMessages(m.mapping, root, childrenByParent),
         projectName: m.conversation_template_id ?? undefined,
         isArchived: m.is_archived ?? false,
     }
@@ -148,10 +152,15 @@ function findRoot(m: Chat['mapping']) {
     return root ?? throwf(`no root message found`)
 }
 
-function convertMessages(msgs: Chat['mapping'], root: Message): my.Message[] {
+function convertMessages(
+    msgs: Chat['mapping'],
+    root: Message,
+    childrenByParent: ReadonlyMap<string, readonly string[]>,
+): my.Message[] {
     type Ctx = { customInstructions?: string }
     type Frame = {
         msg: Message
+        childIds: readonly string[]
         ctx: Ctx
         childIndex: number | null
         parent?: Frame
@@ -161,7 +170,15 @@ function convertMessages(msgs: Chat['mapping'], root: Message): my.Message[] {
         result?: my.Message[]
     }
 
-    const stack: Frame[] = [{ msg: root, ctx: {}, childIndex: null, state: 'enter' }]
+    const stack: Frame[] = [
+        {
+            msg: root,
+            childIds: childrenByParent.get(root.id) ?? [],
+            ctx: {},
+            childIndex: null,
+            state: 'enter',
+        },
+    ]
     const path = new Set<string>()
     let finalResult: my.Message[] | undefined
 
@@ -174,13 +191,20 @@ function convertMessages(msgs: Chat['mapping'], root: Message): my.Message[] {
             const childrenCtx = nextContext(frame.msg, frame.ctx)
             frame.state = 'exit'
             frame.childrenCtx = childrenCtx
-            frame.childResults = new Array(frame.msg.children.length)
+            frame.childResults = new Array(frame.childIds.length)
             stack.push(frame)
 
-            for (let i = frame.msg.children.length - 1; i >= 0; i--) {
-                const childId = frame.msg.children[i]!
+            for (let i = frame.childIds.length - 1; i >= 0; i--) {
+                const childId = frame.childIds[i]!
                 const child = msgs[childId] ?? throwf(`children message not found: ${childId}`)
-                stack.push({ msg: child, ctx: childrenCtx, childIndex: i, parent: frame, state: 'enter' })
+                stack.push({
+                    msg: child,
+                    childIds: childrenByParent.get(childId) ?? [],
+                    ctx: childrenCtx,
+                    childIndex: i,
+                    parent: frame,
+                    state: 'enter',
+                })
             }
             continue
         }
@@ -243,9 +267,9 @@ ${m.message.content.text}
                         body,
                         customInstructions: ctx.customInstructions,
                         createTime: m.message.create_time ?? undefined,
-                        weight: m.message.weight,
+                        weight: m.message.weight ?? 1,
                         model:
-                            [m.message.metadata.model_slug, m.message.metadata.thinking_effort]
+                            [m.message.metadata?.model_slug, m.message.metadata?.thinking_effort]
                                 .filter(x => x !== undefined)
                                 .join(' ') || undefined,
                         role: m.message.author.role,
@@ -256,6 +280,28 @@ ${m.message.content.text}
     }
 }
 
+function indexChildren(mapping: Chat['mapping']): Map<string, string[]> {
+    const childrenByParent = new Map<string, string[]>()
+
+    for (const id in mapping) {
+        childrenByParent.set(id, [])
+    }
+
+    for (const id in mapping) {
+        const node = mapping[id]!
+        if (node.parent === null) continue
+        const siblings = childrenByParent.get(node.parent)
+        if (siblings === undefined) throwf(`parent message not found: ${node.parent}`)
+        siblings.push(id)
+    }
+
+    return childrenByParent
+}
+
 function throwf(x: unknown): never {
     throw typeof x === 'string' ? new Error(x) : x
+}
+
+function isSkippableChunk(value: unknown) {
+    return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0
 }

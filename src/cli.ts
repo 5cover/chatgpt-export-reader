@@ -108,7 +108,11 @@ program
             fsPath: options.fsPath,
             streamFile: options.streamFile,
         })
-        const artifacts = await outputF.render(filterChats(readInput(inputF, input), new Set(options.chat)))
+        const selectedChats = new Set(options.chat)
+        const artifacts = await outputF.render(filterChats(readInput(inputF, input), selectedChats))
+        if (selectedChats.size && artifacts.size === 0) {
+            throw new Error(`no chats matched requested IDs: ${[...selectedChats].join(', ')}`)
+        }
         await exportF.export(artifacts)
     })
     .parse()
