@@ -33,6 +33,12 @@ export function deduplicateName(parent: ArtifactTree, preferred: string): string
     if (!parent.has(preferred)) return preferred
 
     let index = 1
-    while (parent.has(`${preferred} ${index}`)) index++
-    return `${preferred} ${index}`
+    while (parent.has(suffixedName(preferred, index))) index++
+    return suffixedName(preferred, index)
+}
+
+function suffixedName(name: string, index: number) {
+    const dot = name.lastIndexOf('.')
+    if (dot <= 0) return `${name} ${index}`
+    return `${name.slice(0, dot)} ${index}${name.slice(dot)}`
 }

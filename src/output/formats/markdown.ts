@@ -1,5 +1,5 @@
 import { FastMarkdown, inlineCode, link, shiftMarkdownHeadings, time } from '../../lib/fast-markdown.js'
-import { renderLinearChatArtifacts, type LinearDocument } from '../../lib/linearizer.js'
+import { documentFilename, renderLinearChatArtifacts, type LinearDocument } from '../../lib/linearizer.js'
 import { mapfilter, sanitize, type Falsey } from '../../lib/util.js'
 import type { ArtifactTree, Chat, OutputFormat } from '../../types.js'
 import { addArtifact, artifactTree, deduplicateName, isArtifactTree } from '../artifact-tree.js'
@@ -56,7 +56,7 @@ function toMarkdown(lin: LinearDocument): string {
     }
     if (lin.parent) {
         const p = lin.parent
-        d.paragraph(link(`./${docFilename(p.document)}#${p.messageId}`, `${p.document.title}@${p.messageId}`))
+        d.paragraph(link(`./${documentFilename(p.document, '.md')}#${p.messageId}`, `${p.document.title}@${p.messageId}`))
     }
 
     for (const m of lin.messages) {
@@ -80,7 +80,7 @@ function toMarkdown(lin: LinearDocument): string {
             d.list(
                 m.branches.map(b => {
                     let title = b.title
-                    let url = docFilename(b)
+                    let url = documentFilename(b, '.md')
                     if (b.messages[0]) {
                         title += ` - ${b.messages[0].message.body.slice(0, 50)}`
                         url += `#${b.messages[0].id}`
@@ -119,8 +119,4 @@ function toMarkdown(lin: LinearDocument): string {
         instructions.set(instr, assigned)
         return assigned
     }
-}
-
-function docFilename(d: LinearDocument) {
-    return sanitize(`${d.id ? `${d.id}.` : ''}${d.title}`, '.md')
 }
