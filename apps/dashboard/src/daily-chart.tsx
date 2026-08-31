@@ -9,9 +9,10 @@ export type DailyChartProps = {
     onSelectDate: (date: string) => void
     title?: string
     note?: string
+    showPromptSummary?: boolean
 }
 
-export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages reveal the spikes.', note = 'Teal bars show all messages; orange bars show user prompts. Click a day to inspect its conversations. Drag to zoom; double-click to reset.' }: DailyChartProps) {
+export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages reveal the spikes.', note = 'Teal bars show all messages; orange bars show user prompts. Click a day to inspect its conversations. Drag to zoom; double-click to reset.', showPromptSummary = false }: DailyChartProps) {
     const target = useRef<HTMLDivElement>(null)
     const onSelectDateRef = useRef(onSelectDate)
     onSelectDateRef.current = onSelectDate
@@ -73,6 +74,18 @@ export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages
             </div>
             <div class="chart" ref={target} />
             <p class="chart-note">{note}</p>
+            {showPromptSummary && <p class="chart-summary">User prompts per calendar day: <strong>mean {mean(days.map(day => day.prompts)).toFixed(1)}</strong> · <strong>median {median(days.map(day => day.prompts)).toFixed(1)}</strong></p>}
         </section>
     )
+}
+
+function mean(values: readonly number[]): number {
+    return values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length
+}
+
+function median(values: readonly number[]): number {
+    if (values.length === 0) return 0
+    const sorted = [...values].sort((a, b) => a - b)
+    const middle = Math.floor(sorted.length / 2)
+    return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
 }
