@@ -2,9 +2,9 @@
   "name": "chatgpt-export-reader",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+    "main": "dist/cli.js",
   "scripts": {
-    "build": "tsc --incremental",
+        "build": "pnpm --filter @chatgpt-export-reader/core build && tsc --incremental",
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint"
   },
@@ -13,7 +13,8 @@
   "author": "",
   "license": "MIT",
   "packageManager": "pnpm@11.10.0",
-  "dependencies": {
+    "dependencies": {
+        "@chatgpt-export-reader/core": "workspace:*",
     "@5cover/moremaps": "^1.1.0",
     "@commander-js/extra-typings": "^14.0.0",
     "commander": "^14.0.2",

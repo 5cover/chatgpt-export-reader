@@ -1,0 +1,21 @@
+{
+    "name": "@chatgpt-export-reader/core",
+    "version": "1.0.0",
+    "description": "Browser-safe ChatGPT export normalization and usage statistics.",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.json"
+    },
+    "dependencies": {
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "typescript": "^6.0.2"
+    }
+}

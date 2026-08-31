@@ -12,6 +12,7 @@ import JsonArtifactExporter from './output/exporters/json.js'
 import JsonOutput from './output/formats/json.js'
 import MarkdownOutput from './output/formats/markdown.js'
 import PromptOutput from './output/formats/prompt.js'
+import StatsOutput from './output/formats/stats.js'
 
 const inputFormats = [
     {
@@ -41,6 +42,11 @@ const outputFormats = [
         name: 'prompt',
         desc: 'Render chats as prompt-style transcripts with configurable role prefixes.',
         create: () => new PromptOutput(),
+    },
+    {
+        name: 'stats',
+        desc: 'Generate usage statistics as JSON, CSV, and SVG chart artifacts.',
+        create: () => new StatsOutput(),
     },
 ] as const satisfies readonly { name: string; desc: string; create: () => OutputFormat }[]
 
