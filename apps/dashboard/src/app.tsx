@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { ConversationSummary, UsageDay, UsageStatistics } from '@chatgpt-export-reader/core'
 import { DailyChart } from './daily-chart.js'
+import { SortableTable, type SortableColumn } from './sortable-table.js'
 
 type ImportState =
     | { kind: 'idle' }
@@ -85,13 +86,13 @@ function Welcome() { return <section class="welcome-card"><p class="eyebrow">How
 function Nav({ route }: { route: Route }) { return <nav class="nav"><a class={route.page === 'overview' ? 'active' : ''} href="#/">Overview</a><a class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''} href="#/conversations">Conversations</a></nav> }
 
 function Overview({ stats, selectedDay, selectedDate, onSelectDate }: { stats: UsageStatistics; selectedDay?: UsageDay; selectedDate?: string; onSelectDate: (date: string) => void }) {
-    return <><section class="summary-grid"><Metric label="Chats" value={stats.summary.chats} /><Metric label="Messages" value={stats.summary.messages} /><Metric label="User prompts" value={stats.summary.prompts} /><Metric label="Active days" value={stats.summary.activeDays} /></section><DailyChart days={stats.days} selectedDate={selectedDate} onSelectDate={onSelectDate} />{selectedDay && <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Spike attribution</p><h2>{selectedDay.date}: {selectedDay.messages.toLocaleString()} messages</h2></div><span class="selected-date">{selectedDay.activeChats} active chats</span></div><div class="table-wrap"><table><thead><tr><th>Conversation</th><th>Messages</th><th>Prompts</th><th>Share</th></tr></thead><tbody>{selectedDay.conversations.map(chat => <tr key={chat.id}><td><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a><code>{chat.id}</code></td><td>{chat.messages}</td><td>{chat.prompts}</td><td>{Math.round(chat.messages / selectedDay.messages * 100)}%</td></tr>)}</tbody></table></div></section>}</>
+    return <><section class="summary-grid"><Metric label="Chats" value={stats.summary.chats} /><Metric label="Messages" value={stats.summary.messages} /><Metric label="User prompts" value={stats.summary.prompts} /><Metric label="Active days" value={stats.summary.activeDays} /></section><DailyChart days={stats.days} selectedDate={selectedDate} onSelectDate={onSelectDate} />{selectedDay && <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Spike attribution</p><h2>{selectedDay.date}: {selectedDay.messages.toLocaleString()} messages</h2></div><span class="selected-date">{selectedDay.activeChats} active chats</span></div><SortableTable rows={selectedDay.conversations} columns={dayColumns(selectedDay.messages)} initialSort={{ column: 'messages', direction: 'descending' }} rowKey={chat => chat.id} /></section>}</>
 }
 
 function ConversationList({ conversations }: { conversations: readonly ConversationSummary[] }) {
     const [query, setQuery] = useState('')
     const visible = useMemo(() => conversations.filter(chat => `${chat.title} ${chat.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())), [conversations, query])
-    return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">All conversations</p><h2>{conversations.length.toLocaleString()} chats</h2></div><input class="search" value={query} onInput={event => setQuery(event.currentTarget.value)} placeholder="Search title or ID" /></div><div class="table-wrap"><table><thead><tr><th>Conversation</th><th>Messages by role</th><th>First / last message</th><th>Lifetime</th></tr></thead><tbody>{visible.map(chat => <tr key={chat.id}><td><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a><code>{chat.id}</code></td><td>{chat.messages.toLocaleString()} total<code>{chat.roles.map(role => `${role.role} ${role.messages}`).join(' · ')}</code></td><td>{formatDate(chat.firstMessageAt)}<code>{formatDate(chat.lastMessageAt)}</code></td><td>{formatDuration(chat.lifetimeMs)}</td></tr>)}</tbody></table></div></section>
+    return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">All conversations</p><h2>{conversations.length.toLocaleString()} chats</h2></div><input class="search" value={query} onInput={event => setQuery(event.currentTarget.value)} placeholder="Search title or ID" /></div><SortableTable rows={visible} columns={conversationColumns} initialSort={{ column: 'messages', direction: 'descending' }} rowKey={chat => chat.id} /></section>
 }
 
 function ConversationDetail({ detail }: { detail?: Detail }) {
@@ -104,6 +105,20 @@ function Metric({ label, value }: { label: string; value: number | string }) { r
 function busiestDay(days: readonly UsageDay[]): UsageDay | undefined { return days.reduce<UsageDay | undefined>((best, day) => !best || day.messages > best.messages ? day : best, undefined) }
 function formatDate(value?: string): string { return value ? new Date(value).toLocaleString() : 'No timestamp' }
 function formatDuration(value?: number): string { if (value === undefined) return 'No duration'; const hours = Math.floor(value / 3_600_000); const days = Math.floor(hours / 24); return days ? `${days}d ${hours % 24}h` : `${hours}h ${Math.floor(value / 60_000) % 60}m` }
+const conversationColumns: readonly SortableColumn<ConversationSummary>[] = [
+    { id: 'title', label: 'Conversation', align: 'left', compare: (a, b) => a.title.localeCompare(b.title), render: chat => <><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a><code>{chat.id}</code></> },
+    { id: 'messages', label: 'Messages by role', compare: (a, b) => a.messages - b.messages, render: chat => <>{chat.messages.toLocaleString()} total<code>{chat.roles.map(role => `${role.role} ${role.messages}`).join(' · ')}</code></> },
+    { id: 'first', label: 'First / last message', compare: (a, b) => compareOptionalDate(a.firstMessageAt, b.firstMessageAt), render: chat => <>{formatDate(chat.firstMessageAt)}<code>{formatDate(chat.lastMessageAt)}</code></> },
+    { id: 'lifetime', label: 'Lifetime', compare: (a, b) => compareOptionalNumber(a.lifetimeMs, b.lifetimeMs), render: chat => formatDuration(chat.lifetimeMs) },
+]
+function dayColumns(total: number): readonly SortableColumn<UsageDay['conversations'][number]>[] { return [
+    { id: 'title', label: 'Conversation', align: 'left', compare: (a, b) => a.title.localeCompare(b.title), render: chat => <><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a><code>{chat.id}</code></> },
+    { id: 'messages', label: 'Messages', compare: (a, b) => a.messages - b.messages, render: chat => chat.messages },
+    { id: 'prompts', label: 'Prompts', compare: (a, b) => a.prompts - b.prompts, render: chat => chat.prompts },
+    { id: 'share', label: 'Share', compare: (a, b) => a.messages - b.messages, render: chat => `${Math.round(chat.messages / total * 100)}%` },
+] }
+function compareOptionalNumber(a?: number, b?: number): number { return (a ?? Number.NEGATIVE_INFINITY) - (b ?? Number.NEGATIVE_INFINITY) }
+function compareOptionalDate(a?: string, b?: string): number { return compareOptionalNumber(a ? Date.parse(a) : undefined, b ? Date.parse(b) : undefined) }
 function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/'); return page === 'conversations' ? id ? { page: 'conversation', id: decodeURIComponent(id) } : { page: 'conversations' } : { page: 'overview' } }
 
 type WorkerMessage =
