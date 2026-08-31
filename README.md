@@ -8,7 +8,7 @@ Generate a self-contained usage-report directory from a ChatGPT export:
 
 ```sh
 pnpm build
-node dist/cli.js conversations.json --output-format stats --export-format filesystem --fs-path out/stats
+node packages/cli/dist/cli.js conversations.json --output-format stats --export-format filesystem --fs-path out/stats
 ```
 
 The report contains `stats.json`, CSV tables for daily and role counts, and an SVG line chart of daily message and user-prompt activity. Daily data uses UTC and includes every calendar day from the first timestamped message to the last.

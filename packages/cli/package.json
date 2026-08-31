@@ -1,0 +1,40 @@
+{
+    "name": "chatgpt-export-reader",
+    "version": "1.0.0",
+    "description": "Turn ChatGPT exports into Markdown, prompt, JSON, and statistics artifacts.",
+    "type": "module",
+    "main": "./dist/cli.js",
+    "bin": {
+        "chatgpt-export-reader": "./dist/cli.js"
+    },
+    "files": ["dist"],
+    "scripts": {
+        "build": "tsc --incremental",
+        "lint": "eslint src"
+    },
+    "license": "MIT",
+    "dependencies": {
+        "@5cover/moremaps": "^1.1.0",
+        "@chatgpt-export-reader/core": "workspace:*",
+        "@commander-js/extra-typings": "^14.0.0",
+        "commander": "^14.0.2",
+        "remark": "^15.0.1",
+        "remark-parse": "^11.0.0",
+        "remark-stringify": "^11.0.0",
+        "sanitize-filename": "^1.6.4",
+        "stream-chain": "^3.6.1",
+        "stream-json": "^2.1.0",
+        "unist-util-visit": "^5.1.0",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@eslint/compat": "^2.0.5",
+        "@eslint/js": "^10.0.1",
+        "@types/mdast": "^4.0.4",
+        "@types/node": "^25.5.0",
+        "@types/stream-json": "^1.7.8",
+        "eslint-config-prettier": "^10.1.8",
+        "typescript": "^6.0.2",
+        "typescript-eslint": "^8.59.0"
+    }
+}

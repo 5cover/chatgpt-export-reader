@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "description": "Browser-safe ChatGPT export normalization and usage statistics.",
     "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": ["dist"],
+    "publishConfig": {
+        "access": "public"
+    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -10,7 +16,8 @@
         }
     },
     "scripts": {
-        "build": "tsc -p tsconfig.json"
+        "build": "tsc -p tsconfig.json",
+        "prepack": "pnpm build"
     },
     "dependencies": {
         "zod": "^4.3.6"

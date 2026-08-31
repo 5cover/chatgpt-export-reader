@@ -1,42 +1,11 @@
 {
-  "name": "chatgpt-export-reader",
-  "version": "1.0.0",
-  "description": "",
-    "main": "dist/cli.js",
+    "name": "chatgpt-export-reader-workspace",
+    "private": true,
+    "packageManager": "pnpm@11.10.0",
     "scripts": {
-        "build": "pnpm --filter @chatgpt-export-reader/core build && tsc --incremental",
+        "build": "pnpm --filter @chatgpt-export-reader/core build && pnpm --filter chatgpt-export-reader build",
         "build:dashboard": "pnpm --filter @chatgpt-export-reader/dashboard build",
         "build:all": "pnpm build && pnpm build:dashboard",
-        "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "eslint"
-  },
-  "type": "module",
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "packageManager": "pnpm@11.10.0",
-    "dependencies": {
-        "@chatgpt-export-reader/core": "workspace:*",
-    "@5cover/moremaps": "^1.1.0",
-    "@commander-js/extra-typings": "^14.0.0",
-    "commander": "^14.0.2",
-    "remark": "^15.0.1",
-    "remark-parse": "^11.0.0",
-    "remark-stringify": "^11.0.0",
-    "sanitize-filename": "^1.6.4",
-    "stream-chain": "^3.6.1",
-    "stream-json": "^2.1.0",
-    "unist-util-visit": "^5.1.0",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@eslint/compat": "^2.0.5",
-    "@eslint/js": "^10.0.1",
-    "@types/mdast": "^4.0.4",
-    "@types/node": "^25.5.0",
-    "@types/stream-json": "^1.7.8",
-    "eslint-config-prettier": "^10.1.8",
-    "typescript": "^6.0.2",
-    "typescript-eslint": "^8.59.0"
-  }
+        "lint": "pnpm --filter chatgpt-export-reader lint"
+    }
 }

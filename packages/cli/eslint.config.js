@@ -5,7 +5,7 @@ import * as path from 'path'
 import typescriptEslint from 'typescript-eslint'
 
 export default [
-    includeIgnoreFile(path.resolve(import.meta.dirname, '.gitignore')),
+    includeIgnoreFile(path.resolve(import.meta.dirname, '../../.gitignore')),
     eslintjs.configs.recommended,
     ...typescriptEslint.configs.strictTypeChecked,
     ...typescriptEslint.configs.stylisticTypeChecked,

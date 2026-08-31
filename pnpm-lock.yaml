@@ -6,14 +6,44 @@ settings:
 
 importers:
 
-  .:
+  .: {}
+
+  apps/dashboard:
+    dependencies:
+      '@chatgpt-export-reader/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@streamparser/json':
+        specifier: ^0.0.26
+        version: 0.0.26
+      preact:
+        specifier: ^10.29.8
+        version: 10.29.8
+      uplot:
+        specifier: ^1.6.32
+        version: 1.6.32
+    devDependencies:
+      '@preact/preset-vite':
+        specifier: ^2.10.6
+        version: 2.10.6(@babel/core@7.29.7)(preact@10.29.8)(vite@8.2.2(@types/node@25.5.0))
+      '@types/babel__core':
+        specifier: ^7.20.5
+        version: 7.20.5
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vite:
+        specifier: ^8.2.2
+        version: 8.2.2(@types/node@25.5.0)
+
+  packages/cli:
     dependencies:
       '@5cover/moremaps':
         specifier: ^1.1.0
         version: 1.1.0
       '@chatgpt-export-reader/core':
         specifier: workspace:*
-        version: link:packages/core
+        version: link:../core
       '@commander-js/extra-typings':
         specifier: ^14.0.0
         version: 14.0.0(commander@14.0.3)
@@ -69,34 +99,6 @@ importers:
       typescript-eslint:
         specifier: ^8.59.0
         version: 8.59.0(eslint@10.2.1)(typescript@6.0.2)
-
-  apps/dashboard:
-    dependencies:
-      '@chatgpt-export-reader/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@streamparser/json':
-        specifier: ^0.0.26
-        version: 0.0.26
-      preact:
-        specifier: ^10.29.8
-        version: 10.29.8
-      uplot:
-        specifier: ^1.6.32
-        version: 1.6.32
-    devDependencies:
-      '@preact/preset-vite':
-        specifier: ^2.10.6
-        version: 2.10.6(@babel/core@7.29.7)(preact@10.29.8)(vite@8.2.2(@types/node@25.5.0))
-      '@types/babel__core':
-        specifier: ^7.20.5
-        version: 7.20.5
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
-      vite:
-        specifier: ^8.2.2
-        version: 8.2.2(@types/node@25.5.0)
 
   packages/core:
     dependencies:
@@ -1117,10 +1119,6 @@ packages:
   stream-json@2.1.0:
     resolution: {integrity: sha512-9gV/ywtebMn3DdKnNKYCb9iESvgR1dHbucNV+bRGvdvy+jV4c9FFgYKmENhpKv58jSwvs90Wk80RhfKk1KxHPg==}
 
-  tinyglobby@0.2.16:
-    resolution: {integrity: sha512-pn99VhoACYR8nFHhxqix+uvsbXineAasWm5ojXoN8xEwK5Kd3/TrhNn1wByuD52UxWRLy8pu+kRMniEi6Eq9Zg==}
-    engines: {node: '>=12.0.0'}
-
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
@@ -1699,7 +1697,7 @@ snapshots:
       debug: 4.4.3
       minimatch: 10.2.5
       semver: 7.7.4
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       ts-api-utils: 2.5.0(typescript@6.0.2)
       typescript: 6.0.2
     transitivePeerDependencies:
@@ -2344,11 +2342,6 @@ snapshots:
   stream-json@2.1.0:
     dependencies:
       stream-chain: 3.6.1
-
-  tinyglobby@0.2.16:
-    dependencies:
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
 
   tinyglobby@0.2.17:
     dependencies:
