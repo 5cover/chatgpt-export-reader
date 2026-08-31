@@ -65,11 +65,6 @@ export type ConversationSummary = {
     activeDays: number
 }
 
-export type ConversationTimelineEvent = {
-    id: string
-    role: string
-    createTime: number
-}
 
 type MutableUsageConversation = UsageConversation
 type MutableConversationSummary = Omit<ConversationSummary, 'roles' | 'firstMessageAt' | 'lastMessageAt' | 'lifetimeMs' | 'activeDays'> & {
@@ -201,12 +196,6 @@ export class UsageStatsAccumulator {
         const value = new Map(parts.map(part => [part.type, part.value]))
         return `${value.get('year')!}-${value.get('month')!}-${value.get('day')!}`
     }
-}
-
-export function conversationTimeline(chat: Chat): ConversationTimelineEvent[] {
-    return [...walkMessages(chat.messages)]
-        .flatMap(message => message.createTime === undefined || !isValidTimestamp(message.createTime) ? [] : [{ id: message.id, role: message.role, createTime: message.createTime }])
-        .sort((a, b) => a.createTime - b.createTime)
 }
 
 export async function collectUsageStatistics(chats: AsyncIterable<Chat>, timeZone = 'UTC'): Promise<UsageStatistics> {

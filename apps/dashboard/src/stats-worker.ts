@@ -1,5 +1,5 @@
 import { JSONParser } from '@streamparser/json'
-import { conversationTimeline, isEmptyV1Record, normalizeV1Chat, UsageStatsAccumulator, type ConversationSummary, type UsageDay, type UsageStatistics } from '@chatgpt-export-reader/core'
+import { isEmptyV1Record, normalizeV1Chat, UsageStatsAccumulator, type ConversationSummary, type UsageDay, type UsageStatistics } from '@chatgpt-export-reader/core'
 
 type ImportRequest = {
     type: 'import'
@@ -29,7 +29,7 @@ type Complete = {
     durationMs: number
 }
 
-type Detail = { type: 'conversation-detail'; id: string; summary: ConversationSummary; days: UsageDay[]; timeline: ReturnType<typeof conversationTimeline> }
+type Detail = { type: 'conversation-detail'; id: string; summary: ConversationSummary; days: UsageDay[] }
 
 type Failure = {
     type: 'failure'
@@ -140,7 +140,6 @@ async function loadConversationDetail(request: DetailRequest): Promise<void> {
         id: request.id,
         summary,
         days: statistics.days,
-        timeline: conversationTimeline(chat),
     } satisfies Detail)
 }
 

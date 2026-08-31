@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { ConversationSummary, ConversationTimelineEvent, UsageDay, UsageStatistics } from '@chatgpt-export-reader/core'
+import type { ConversationSummary, UsageDay, UsageStatistics } from '@chatgpt-export-reader/core'
 import { DailyChart } from './daily-chart.js'
 
 type ImportState =
@@ -9,7 +9,7 @@ type ImportState =
     | { kind: 'error'; message: string }
 type TimeZoneMode = 'local' | 'utc'
 type Route = { page: 'overview' } | { page: 'conversations' } | { page: 'conversation'; id: string }
-type Detail = { summary: ConversationSummary; days: UsageDay[]; timeline: ConversationTimelineEvent[] }
+type Detail = { summary: ConversationSummary; days: UsageDay[] }
 
 export function App() {
     const input = useRef<HTMLInputElement>(null)
@@ -48,7 +48,7 @@ export function App() {
             setState({ kind: 'ready', local: message.local, utc: message.utc, skipped: message.skipped, durationMs: message.durationMs })
             setSelectedDate(busiestDay(message.local.days)?.date)
         } else if (message.type === 'conversation-detail') {
-            setDetail({ summary: message.summary, days: message.days, timeline: message.timeline })
+            setDetail({ summary: message.summary, days: message.days })
         } else setState({ kind: 'error', message: message.message })
     }
 
@@ -96,8 +96,8 @@ function ConversationList({ conversations }: { conversations: readonly Conversat
 
 function ConversationDetail({ detail }: { detail?: Detail }) {
     if (!detail) return <section class="status-card"><p class="eyebrow">Loading conversation</p><strong>Calculating its timeline and daily activity locally...</strong></section>
-    const { summary, days, timeline } = detail
-    return <><section class="detail-card"><p class="eyebrow">Conversation detail</p><h2>{summary.title || 'Untitled chat'}</h2><code>{summary.id}</code><section class="summary-grid"><Metric label="Messages" value={summary.messages} /><Metric label="Active days" value={summary.activeDays} /><Metric label="Lifetime" value={formatDuration(summary.lifetimeMs)} /><Metric label="Roles" value={summary.roles.length} /></section><p>{formatDate(summary.firstMessageAt)} to {formatDate(summary.lastMessageAt)}</p></section><DailyChart days={days} title="Activity across this chat's lifetime" note="Bars show all messages and user prompts across this conversation's active lifetime." onSelectDate={() => {}} /><section class="breakdown-card"><p class="eyebrow">Message timeline</p><h2>{timeline.length.toLocaleString()} timestamped events</h2><div class="timeline">{timeline.map(event => <span class={`event ${event.role}`} title={`${event.role} · ${new Date(event.createTime).toLocaleString()}`}><i />{new Date(event.createTime).toLocaleDateString()}</span>)}</div></section></>
+    const { summary, days } = detail
+    return <><section class="detail-card"><p class="eyebrow">Conversation detail</p><h2>{summary.title || 'Untitled chat'}</h2><code>{summary.id}</code><section class="summary-grid"><Metric label="Messages" value={summary.messages} /><Metric label="Active days" value={summary.activeDays} /><Metric label="Lifetime" value={formatDuration(summary.lifetimeMs)} /><Metric label="Roles" value={summary.roles.length} /></section><p>{formatDate(summary.firstMessageAt)} to {formatDate(summary.lastMessageAt)}</p></section><DailyChart days={days} title="Activity across this chat's lifetime" note="Bars show all messages and user prompts across this conversation's active lifetime." onSelectDate={() => {}} /></>
 }
 
 function Metric({ label, value }: { label: string; value: number | string }) { return <div class="metric"><span>{label}</span><strong>{typeof value === 'number' ? value.toLocaleString() : value}</strong></div> }
@@ -109,5 +109,5 @@ function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/
 type WorkerMessage =
     | { type: 'progress'; fileName: string; fileIndex: number; fileCount: number; bytesRead: number; bytesTotal: number; chats: number }
     | { type: 'complete'; local: UsageStatistics; utc: UsageStatistics; skipped: number; durationMs: number }
-    | { type: 'conversation-detail'; id: string; summary: ConversationSummary; days: UsageDay[]; timeline: ConversationTimelineEvent[] }
+    | { type: 'conversation-detail'; id: string; summary: ConversationSummary; days: UsageDay[] }
     | { type: 'failure'; message: string }
