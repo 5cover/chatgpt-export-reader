@@ -1,0 +1,23 @@
+{
+    "name": "@chatgpt-export-reader/dashboard",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc -b && vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "@chatgpt-export-reader/core": "workspace:*",
+        "@streamparser/json": "^0.0.26",
+        "preact": "^10.29.8",
+        "uplot": "^1.6.32"
+    },
+    "devDependencies": {
+        "@preact/preset-vite": "^2.10.6",
+        "@types/babel__core": "^7.20.5",
+        "typescript": "^6.0.2",
+        "vite": "^8.2.2"
+    }
+}

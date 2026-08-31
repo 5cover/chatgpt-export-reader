@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "target": "ES2024",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "jsx": "react-jsx",
+        "jsxImportSource": "preact",
+        "verbatimModuleSyntax": true,
+        "noEmit": true,
+        "types": ["vite/client"]
+    },
+    "include": ["src", "vite.config.ts"]
+}
