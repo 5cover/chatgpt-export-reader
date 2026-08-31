@@ -29,8 +29,18 @@ export function DailyChart({ days, selectedDate, onSelectDate }: DailyChartProps
                 ],
                 series: [
                     {},
-                    { label: 'All messages', stroke: '#0b7773', width: 2.5, fill: 'rgba(11, 119, 115, 0.10)' },
-                    { label: 'User prompts', stroke: '#d36c37', width: 2.5 },
+                    {
+                        label: 'All messages',
+                        stroke: '#0b7773',
+                        fill: 'rgba(11, 119, 115, 0.60)',
+                        paths: uPlot.paths.bars!({ size: [0.82], gap: 1, radius: 0.2 }),
+                    },
+                    {
+                        label: 'User prompts',
+                        stroke: '#d36c37',
+                        fill: 'rgba(211, 108, 55, 0.86)',
+                        paths: uPlot.paths.bars!({ size: [0.52], gap: 1, radius: 0.2 }),
+                    },
                 ],
                 hooks: {
                     ready: [plot => {
@@ -60,7 +70,7 @@ export function DailyChart({ days, selectedDate, onSelectDate }: DailyChartProps
                 {selectedDate && <span class="selected-date">Selected: {selectedDate}</span>}
             </div>
             <div class="chart" ref={target} />
-            <p class="chart-note">Click a day to inspect the conversations that contributed to it. Drag to zoom; double-click to reset.</p>
+            <p class="chart-note">Teal bars show all messages; orange bars show user prompts. Click a day to inspect its conversations. Drag to zoom; double-click to reset.</p>
         </section>
     )
 }
