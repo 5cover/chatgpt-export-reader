@@ -9,6 +9,7 @@ export {
     type UsageMessageInput,
     type UsageRole,
     type UsageStatistics,
+    type UsageStatsOptions,
     type UsageSummary,
     type ConversationSummary,
 } from './usage-stats.js'

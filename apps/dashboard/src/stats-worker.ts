@@ -1,16 +1,34 @@
 import { JSONParser } from '@streamparser/json'
-import { isEmptyV1Record, normalizeV1Chat, UsageStatsAccumulator, type ConversationSummary, type UsageDay, type UsageStatistics } from '@chatgpt-export-reader/core'
+import { isEmptyV1Record, normalizeV1Chat, UsageStatsAccumulator, type Chat, type ConversationSummary, type UsageDay, type UsageStatistics } from '@chatgpt-export-reader/core'
 
 type ImportRequest = {
     type: 'import'
+    requestId: number
     files: File[]
     localTimeZone: string
+    startDate?: string
 }
 
-type DetailRequest = { type: 'conversation-detail'; id: string; timeZone: string }
+type StatisticsRequest = {
+    type: 'statistics'
+    requestId: number
+    localTimeZone: string
+    startDate?: string
+}
+
+type DetailRequest = {
+    type: 'conversation-detail'
+    requestId: number
+    id: string
+    timeZone: string
+    startDate?: string
+}
+
+type Request = ImportRequest | StatisticsRequest | DetailRequest
 
 type Progress = {
     type: 'progress'
+    requestId: number
     fileName: string
     fileIndex: number
     fileCount: number
@@ -22,49 +40,73 @@ type Progress = {
 
 type Complete = {
     type: 'complete'
+    requestId: number
     local: UsageStatistics
     utc: UsageStatistics
     chats: number
     skipped: number
     durationMs: number
+    startDate?: string
 }
 
-type Detail = { type: 'conversation-detail'; id: string; summary: ConversationSummary; days: UsageDay[] }
+type Statistics = {
+    type: 'statistics'
+    requestId: number
+    local: UsageStatistics
+    utc: UsageStatistics
+    startDate?: string
+}
+
+type Detail = {
+    type: 'conversation-detail'
+    requestId: number
+    id: string
+    summary: ConversationSummary
+    days: UsageDay[]
+}
 
 type Failure = {
     type: 'failure'
+    requestId: number
+    operation: Request['type']
     message: string
 }
 
 const worker = globalThis
-const retainedChats = new Map<string, ReturnType<typeof normalizeV1Chat>>()
+const retainedChats: Chat[] = []
+const retainedChatsById = new Map<string, Chat[]>()
 
-worker.addEventListener('message', (event: MessageEvent<ImportRequest | DetailRequest>) => {
+worker.addEventListener('message', (event: MessageEvent<Request>) => {
     const request = event.data
-    const operation = request.type === 'import' ? importFiles(request) : loadConversationDetail(request)
+    const operation = request.type === 'import'
+        ? importFiles(request)
+        : request.type === 'statistics'
+            ? recalculateStatistics(request)
+            : loadConversationDetail(request)
     void operation.catch(error => {
         worker.postMessage({
             type: 'failure',
+            requestId: request.requestId,
+            operation: request.type,
             message: error instanceof Error ? error.message : String(error),
         } satisfies Failure)
     })
 })
 
 async function importFiles(request: ImportRequest): Promise<void> {
-    if (request.type !== 'import') return
-
     const files = request.files
         .filter(file => /^conversations(?:-[^/]+)?\.json$/i.test(file.name))
         .sort((a, b) => relativeName(a).localeCompare(relativeName(b)))
     if (files.length === 0) throw new Error('No conversations*.json files were found in the selected folder.')
 
-    const local = new UsageStatsAccumulator(request.localTimeZone)
-    const utc = new UsageStatsAccumulator('UTC')
+    const local = new UsageStatsAccumulator({ timeZone: request.localTimeZone, startDate: request.startDate })
+    const utc = new UsageStatsAccumulator({ timeZone: 'UTC', startDate: request.startDate })
     let chats = 0
     let skipped = 0
     let lastProgressAt = 0
     const startedAt = performance.now()
-    retainedChats.clear()
+    retainedChats.length = 0
+    retainedChatsById.clear()
 
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
         const file = files[fileIndex]!
@@ -73,7 +115,10 @@ async function importFiles(request: ImportRequest): Promise<void> {
             if (isEmptyV1Record(value)) return
             try {
                 const chat = normalizeV1Chat(value)
-                retainedChats.set(chat.id, chat)
+                retainedChats.push(chat)
+                const chatsWithId = retainedChatsById.get(chat.id) ?? []
+                chatsWithId.push(chat)
+                retainedChatsById.set(chat.id, chatsWithId)
                 local.addChat(chat)
                 utc.addChat(chat)
                 chats++
@@ -95,6 +140,7 @@ async function importFiles(request: ImportRequest): Promise<void> {
                     lastProgressAt = now
                     worker.postMessage({
                         type: 'progress',
+                        requestId: request.requestId,
                         fileName: relativeName(file),
                         fileIndex: fileIndex + 1,
                         fileCount: files.length,
@@ -118,29 +164,53 @@ async function importFiles(request: ImportRequest): Promise<void> {
 
     worker.postMessage({
         type: 'complete',
+        requestId: request.requestId,
         local: local.finish(),
         utc: utc.finish(),
         chats,
         skipped,
         durationMs: Math.round(performance.now() - startedAt),
+        startDate: request.startDate,
     } satisfies Complete)
 }
 
-async function loadConversationDetail(request: DetailRequest): Promise<void> {
-    const chat = retainedChats.get(request.id)
-    if (chat === undefined) throw new Error(`Conversation no longer exists in this browser session: ${request.id}`)
+async function recalculateStatistics(request: StatisticsRequest): Promise<void> {
+    const { local, utc } = statisticsFor(request.localTimeZone, request.startDate)
+    worker.postMessage({
+        type: 'statistics',
+        requestId: request.requestId,
+        local,
+        utc,
+        startDate: request.startDate,
+    } satisfies Statistics)
+}
 
-    const accumulator = new UsageStatsAccumulator(request.timeZone)
-    accumulator.addChat(chat)
+async function loadConversationDetail(request: DetailRequest): Promise<void> {
+    const chats = retainedChatsById.get(request.id)
+    if (chats === undefined) throw new Error(`Conversation no longer exists in this browser session: ${request.id}`)
+
+    const accumulator = new UsageStatsAccumulator({ timeZone: request.timeZone, startDate: request.startDate })
+    for (const chat of chats) accumulator.addChat(chat)
     const statistics = accumulator.finish()
-    const summary = statistics.conversations[0]
-    if (summary === undefined) throw new Error(`Conversation statistics are unavailable: ${request.id}`)
+    const summary = statistics.conversations.find(chat => chat.id === request.id)
+    if (summary === undefined) throw new Error(`Conversation has no messages in the selected date range: ${request.id}`)
     worker.postMessage({
         type: 'conversation-detail',
+        requestId: request.requestId,
         id: request.id,
         summary,
         days: statistics.days,
     } satisfies Detail)
+}
+
+function statisticsFor(localTimeZone: string, startDate?: string): { local: UsageStatistics; utc: UsageStatistics } {
+    const local = new UsageStatsAccumulator({ timeZone: localTimeZone, startDate })
+    const utc = new UsageStatsAccumulator({ timeZone: 'UTC', startDate })
+    for (const chat of retainedChats) {
+        local.addChat(chat)
+        utc.addChat(chat)
+    }
+    return { local: local.finish(), utc: utc.finish() }
 }
 
 function relativeName(file: File): string {

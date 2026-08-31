@@ -7,6 +7,11 @@ export type UsageStatistics = {
     conversations: ConversationSummary[]
 }
 
+export type UsageStatsOptions = {
+    timeZone?: string
+    startDate?: string
+}
+
 export type UsageSummary = {
     chats: number
     messages: number
@@ -93,14 +98,17 @@ export class UsageStatsAccumulator {
     private firstTimestamp: number | undefined
     private lastTimestamp: number | undefined
     private readonly dayFormatter: Intl.DateTimeFormat
+    private readonly startDate: string | undefined
 
-    constructor(timeZone = 'UTC') {
+    constructor(options: string | UsageStatsOptions = 'UTC') {
+        const { timeZone = 'UTC', startDate } = typeof options === 'string' ? { timeZone: options } : options
         this.dayFormatter = new Intl.DateTimeFormat('en-CA', {
             timeZone,
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
         })
+        this.startDate = startDate === undefined ? undefined : validateStartDate(startDate)
     }
 
     addChat(chat: Chat): void {
@@ -112,10 +120,32 @@ export class UsageStatsAccumulator {
     }
 
     addConversation(conversation: UsageConversationInput): void {
-        this.summary.chats++
-        const summary = this.conversations.get(conversation.id) ?? createConversationSummary(conversation)
-        this.conversations.set(conversation.id, summary)
-        for (const message of conversation.messages) this.addMessage(conversation, message, summary)
+        let summary = this.conversations.get(conversation.id)
+        let includedConversation = false
+
+        if (this.startDate === undefined) {
+            this.summary.chats++
+            summary ??= createConversationSummary(conversation)
+            this.conversations.set(conversation.id, summary)
+            includedConversation = true
+        }
+
+        for (const message of conversation.messages) {
+            if (!this.shouldInclude(message)) continue
+            if (!includedConversation) {
+                this.summary.chats++
+                summary ??= createConversationSummary(conversation)
+                this.conversations.set(conversation.id, summary)
+                includedConversation = true
+            }
+            this.addMessage(conversation, message, summary!)
+        }
+    }
+
+    private shouldInclude(message: UsageMessageInput): boolean {
+        if (this.startDate === undefined) return true
+        const timestamp = message.createTime
+        return timestamp !== undefined && isValidTimestamp(timestamp) && this.dayKey(timestamp) >= this.startDate
     }
 
     finish(): UsageStatistics {
@@ -198,8 +228,8 @@ export class UsageStatsAccumulator {
     }
 }
 
-export async function collectUsageStatistics(chats: AsyncIterable<Chat>, timeZone = 'UTC'): Promise<UsageStatistics> {
-    const accumulator = new UsageStatsAccumulator(timeZone)
+export async function collectUsageStatistics(chats: AsyncIterable<Chat>, options: string | UsageStatsOptions = 'UTC'): Promise<UsageStatistics> {
+    const accumulator = new UsageStatsAccumulator(options)
     for await (const chat of chats) accumulator.addChat(chat)
     return accumulator.finish()
 }
@@ -271,4 +301,20 @@ function toUsageDay(day: MutableUsageDay): UsageDay {
 
 function isValidTimestamp(timestamp: number): boolean {
     return Number.isFinite(timestamp) && Number.isFinite(new Date(timestamp).getTime())
+}
+
+function validateStartDate(value: string): string {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+    if (match === null) throw new RangeError(`Invalid start date: ${value}. Expected YYYY-MM-DD.`)
+
+    const [, yearText, monthText, dayText] = match
+    const year = Number(yearText)
+    const month = Number(monthText)
+    const day = Number(dayText)
+    const date = new Date(0)
+    date.setUTCFullYear(year, month - 1, day)
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+        throw new RangeError(`Invalid start date: ${value}. Expected a real calendar date.`)
+    }
+    return value
 }

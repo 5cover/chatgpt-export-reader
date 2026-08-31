@@ -11,3 +11,12 @@ const statistics = accumulator.finish()
 ```
 
 `normalizeV1Chat` accepts one raw entry from a `conversations*.json` array. Consumers choose their own file and JSON streaming layer; this makes the package usable from Node, browsers, and Workers.
+
+Pass an options object to group days in a timezone and exclude earlier messages. The cutoff is inclusive and uses that timezone's calendar days. When a cutoff is set, messages without valid timestamps are excluded because they cannot be placed in the range.
+
+```ts
+const accumulator = new UsageStatsAccumulator({
+    timeZone: 'Europe/Paris',
+    startDate: '2025-01-01',
+})
+```
