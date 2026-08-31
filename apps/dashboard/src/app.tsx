@@ -41,10 +41,13 @@ export function App() {
 
     const stats = state.kind === 'ready' ? (timeZoneMode === 'local' ? state.local : state.utc) : undefined
     const skipped = state.kind === 'ready' ? state.skipped : 0
+    const importing = state.kind === 'loading'
     const selectedDay = useMemo(() => stats?.days.find(day => day.date === selectedDate), [stats, selectedDate])
 
     function selectFolder(event: Event) {
-        const files = [...(event.currentTarget as HTMLInputElement).files ?? []]
+        const fileInput = event.currentTarget as HTMLInputElement
+        const files = [...fileInput.files ?? []]
+        fileInput.value = ''
         if (files.length === 0) return
         setState({ kind: 'loading', detail: 'Preparing local import...' })
         worker.current?.postMessage({
@@ -70,10 +73,10 @@ export function App() {
                     <h1>ChatGPT Usage Atlas</h1>
                     <p class="subtitle">Find the conversations behind your busiest days.</p>
                 </div>
-                <label class="import-button">
-                    <input ref={input} type="file" multiple onChange={selectFolder} />
-                    Choose export folder
-                </label>
+                <button class="import-button" type="button" disabled={importing} onClick={() => input.current?.click()}>
+                    {importing ? 'Importing...' : 'Choose export folder'}
+                </button>
+                <input class="import-input" ref={input} type="file" multiple onChange={selectFolder} />
             </header>
 
             {state.kind === 'idle' && <Welcome />}

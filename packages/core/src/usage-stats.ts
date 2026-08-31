@@ -37,6 +37,17 @@ export type UsageConversation = {
     otherMessages: number
 }
 
+export type UsageConversationInput = {
+    id: string
+    title: string
+    messages: Iterable<UsageMessageInput>
+}
+
+export type UsageMessageInput = {
+    role: string
+    createTime?: number
+}
+
 export type UsageRole = {
     role: string
     messages: number
@@ -73,8 +84,16 @@ export class UsageStatsAccumulator {
     }
 
     addChat(chat: Chat): void {
+        this.addConversation({
+            id: chat.id,
+            title: chat.title,
+            messages: walkMessages(chat.messages),
+        })
+    }
+
+    addConversation(conversation: UsageConversationInput): void {
         this.summary.chats++
-        for (const message of walkMessages(chat.messages)) this.addMessage(chat, message)
+        for (const message of conversation.messages) this.addMessage(conversation, message)
     }
 
     finish(): UsageStatistics {
@@ -93,7 +112,7 @@ export class UsageStatsAccumulator {
         }
     }
 
-    private addMessage(chat: Chat, message: Message): void {
+    private addMessage(conversation: UsageConversationInput, message: UsageMessageInput): void {
         this.summary.messages++
         this.roles.set(message.role, (this.roles.get(message.role) ?? 0) + 1)
         if (message.role === 'user') this.summary.prompts++
@@ -117,12 +136,12 @@ export class UsageStatsAccumulator {
         else if (message.role === 'assistant') day.assistantMessages++
         else day.otherMessages++
 
-        const conversation = day.conversations.get(chat.id) ?? createConversation(chat)
-        day.conversations.set(chat.id, conversation)
-        conversation.messages++
-        if (message.role === 'user') conversation.prompts++
-        else if (message.role === 'assistant') conversation.assistantMessages++
-        else conversation.otherMessages++
+        const dayConversation = day.conversations.get(conversation.id) ?? createConversation(conversation)
+        day.conversations.set(conversation.id, dayConversation)
+        dayConversation.messages++
+        if (message.role === 'user') dayConversation.prompts++
+        else if (message.role === 'assistant') dayConversation.assistantMessages++
+        else dayConversation.otherMessages++
     }
 
     private fillDays(): UsageDay[] {
@@ -178,10 +197,10 @@ function createDay(date: string): MutableUsageDay {
     }
 }
 
-function createConversation(chat: Chat): MutableUsageConversation {
+function createConversation(conversation: UsageConversationInput): MutableUsageConversation {
     return {
-        id: chat.id,
-        title: chat.title,
+        id: conversation.id,
+        title: conversation.title,
         messages: 0,
         prompts: 0,
         assistantMessages: 0,

@@ -1,5 +1,5 @@
 import { JSONParser } from '@streamparser/json'
-import { isEmptyV1Record, normalizeV1Chat, UsageStatsAccumulator, type UsageStatistics } from '@chatgpt-export-reader/core'
+import { extractV1UsageConversation, isEmptyV1Record, UsageStatsAccumulator, type UsageStatistics } from '@chatgpt-export-reader/core'
 
 type ImportRequest = {
     type: 'import'
@@ -54,6 +54,7 @@ async function importFiles(request: ImportRequest): Promise<void> {
     const utc = new UsageStatsAccumulator('UTC')
     let chats = 0
     let skipped = 0
+    let lastProgressAt = 0
 
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
         const file = files[fileIndex]!
@@ -61,9 +62,9 @@ async function importFiles(request: ImportRequest): Promise<void> {
         parser.onValue = ({ value }) => {
             if (isEmptyV1Record(value)) return
             try {
-                const chat = normalizeV1Chat(value)
-                local.addChat(chat)
-                utc.addChat(chat)
+                const conversation = extractV1UsageConversation(value)
+                local.addConversation(conversation)
+                utc.addConversation(conversation)
                 chats++
             } catch {
                 skipped++
@@ -78,16 +79,20 @@ async function importFiles(request: ImportRequest): Promise<void> {
                 if (chunk.done) break
                 parser.write(chunk.value)
                 bytesRead += chunk.value.byteLength
-                worker.postMessage({
-                    type: 'progress',
-                    fileName: relativeName(file),
-                    fileIndex: fileIndex + 1,
-                    fileCount: files.length,
-                    bytesRead,
-                    bytesTotal: file.size,
-                    chats,
-                    skipped,
-                } satisfies Progress)
+                const now = performance.now()
+                if (now - lastProgressAt >= 250) {
+                    lastProgressAt = now
+                    worker.postMessage({
+                        type: 'progress',
+                        fileName: relativeName(file),
+                        fileIndex: fileIndex + 1,
+                        fileCount: files.length,
+                        bytesRead,
+                        bytesTotal: file.size,
+                        chats,
+                        skipped,
+                    } satisfies Progress)
+                }
             }
 
             // The parser closes itself after a complete top-level array. Calling end twice reports a false malformed-export error.

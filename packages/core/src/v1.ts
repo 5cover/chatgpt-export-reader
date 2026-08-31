@@ -1,4 +1,5 @@
 import * as z from 'zod'
+import type { UsageConversationInput, UsageMessageInput } from './usage-stats.js'
 import type { Chat, Message, Thought } from './types.js'
 
 const zId = z.string()
@@ -63,6 +64,36 @@ export function normalizeV1Chat(raw: unknown): Chat {
         projectName: source.conversation_template_id ?? undefined,
         isArchived: source.is_archived ?? false,
     }
+}
+
+/**
+ * Extract only the fields required for statistics. This avoids validating and
+ * materializing message bodies when an interactive dashboard needs counts only.
+ */
+export function extractV1UsageConversation(raw: unknown): UsageConversationInput {
+    const chat = asRecord(raw, 'chat')
+    const id = asString(chat.id, 'chat.id')
+    const title = asString(chat.title, 'chat.title')
+    const mapping = asRecord(chat.mapping, 'chat.mapping')
+    const messages: UsageMessageInput[] = []
+
+    for (const [nodeId, node] of Object.entries(mapping)) {
+        const envelope = asRecord(node, `chat.mapping.${nodeId}`)
+        if (envelope.message === null) continue
+        const message = asRecord(envelope.message, `chat.mapping.${nodeId}.message`)
+        const author = asRecord(message.author, `chat.mapping.${nodeId}.message.author`)
+        const content = asRecord(message.content, `chat.mapping.${nodeId}.message.content`)
+        const role = asString(author.role, `chat.mapping.${nodeId}.message.author.role`)
+        if (!isCountableContent(content)) continue
+
+        const createTime = message.create_time
+        messages.push({
+            role,
+            createTime: createTime === null || createTime === undefined ? undefined : asNumber(createTime, `chat.mapping.${nodeId}.message.create_time`) * 1000,
+        })
+    }
+
+    return { id, title, messages }
 }
 
 function findRoot(mapping: RawChat['mapping']): RawMessage {
@@ -182,4 +213,27 @@ function materializeMessage(message: RawMessage, context: { customInstructions?:
             children,
         },
     ]
+}
+
+function isCountableContent(content: Record<string, unknown>): boolean {
+    const type = content.content_type
+    if (type === 'code') return typeof content.language === 'string' && typeof content.text === 'string'
+    if (type === 'execution_output') return typeof content.text === 'string' && content.text.length > 0
+    if (type !== 'text' || !Array.isArray(content.parts)) return false
+    return content.parts.every(part => typeof part === 'string') && content.parts.join('').length > 0
+}
+
+function asRecord(value: unknown, path: string): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${path} must be an object`)
+    return value as Record<string, unknown>
+}
+
+function asString(value: unknown, path: string): string {
+    if (typeof value !== 'string') throw new Error(`${path} must be a string`)
+    return value
+}
+
+function asNumber(value: unknown, path: string): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${path} must be a finite number`)
+    return value
 }
