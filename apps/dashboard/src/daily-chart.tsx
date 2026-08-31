@@ -7,9 +7,11 @@ export type DailyChartProps = {
     days: readonly UsageDay[]
     selectedDate?: string
     onSelectDate: (date: string) => void
+    title?: string
+    note?: string
 }
 
-export function DailyChart({ days, selectedDate, onSelectDate }: DailyChartProps) {
+export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages reveal the spikes.', note = 'Teal bars show all messages; orange bars show user prompts. Click a day to inspect its conversations. Drag to zoom; double-click to reset.' }: DailyChartProps) {
     const target = useRef<HTMLDivElement>(null)
     const onSelectDateRef = useRef(onSelectDate)
     onSelectDateRef.current = onSelectDate
@@ -65,12 +67,12 @@ export function DailyChart({ days, selectedDate, onSelectDate }: DailyChartProps
             <div class="chart-heading">
                 <div>
                     <p class="eyebrow">Daily activity</p>
-                    <h2>Messages reveal the spikes.</h2>
+                    <h2>{title}</h2>
                 </div>
                 {selectedDate && <span class="selected-date">Selected: {selectedDate}</span>}
             </div>
             <div class="chart" ref={target} />
-            <p class="chart-note">Teal bars show all messages; orange bars show user prompts. Click a day to inspect its conversations. Drag to zoom; double-click to reset.</p>
+            <p class="chart-note">{note}</p>
         </section>
     )
 }

@@ -1,11 +1,13 @@
 import { JSONParser } from '@streamparser/json'
-import { extractV1UsageConversation, isEmptyV1Record, UsageStatsAccumulator, type UsageStatistics } from '@chatgpt-export-reader/core'
+import { conversationTimeline, isEmptyV1Record, normalizeV1Chat, UsageStatsAccumulator, type ConversationSummary, type UsageDay, type UsageStatistics } from '@chatgpt-export-reader/core'
 
 type ImportRequest = {
     type: 'import'
     files: File[]
     localTimeZone: string
 }
+
+type DetailRequest = { type: 'conversation-detail'; id: string; timeZone: string }
 
 type Progress = {
     type: 'progress'
@@ -24,7 +26,10 @@ type Complete = {
     utc: UsageStatistics
     chats: number
     skipped: number
+    durationMs: number
 }
+
+type Detail = { type: 'conversation-detail'; id: string; summary: ConversationSummary; days: UsageDay[]; timeline: ReturnType<typeof conversationTimeline> }
 
 type Failure = {
     type: 'failure'
@@ -32,9 +37,12 @@ type Failure = {
 }
 
 const worker = globalThis
+const retainedChats = new Map<string, ReturnType<typeof normalizeV1Chat>>()
 
-worker.addEventListener('message', (event: MessageEvent<ImportRequest>) => {
-    void importFiles(event.data).catch(error => {
+worker.addEventListener('message', (event: MessageEvent<ImportRequest | DetailRequest>) => {
+    const request = event.data
+    const operation = request.type === 'import' ? importFiles(request) : loadConversationDetail(request)
+    void operation.catch(error => {
         worker.postMessage({
             type: 'failure',
             message: error instanceof Error ? error.message : String(error),
@@ -55,6 +63,8 @@ async function importFiles(request: ImportRequest): Promise<void> {
     let chats = 0
     let skipped = 0
     let lastProgressAt = 0
+    const startedAt = performance.now()
+    retainedChats.clear()
 
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
         const file = files[fileIndex]!
@@ -62,9 +72,10 @@ async function importFiles(request: ImportRequest): Promise<void> {
         parser.onValue = ({ value }) => {
             if (isEmptyV1Record(value)) return
             try {
-                const conversation = extractV1UsageConversation(value)
-                local.addConversation(conversation)
-                utc.addConversation(conversation)
+                const chat = normalizeV1Chat(value)
+                retainedChats.set(chat.id, chat)
+                local.addChat(chat)
+                utc.addChat(chat)
                 chats++
             } catch {
                 skipped++
@@ -111,7 +122,26 @@ async function importFiles(request: ImportRequest): Promise<void> {
         utc: utc.finish(),
         chats,
         skipped,
+        durationMs: Math.round(performance.now() - startedAt),
     } satisfies Complete)
+}
+
+async function loadConversationDetail(request: DetailRequest): Promise<void> {
+    const chat = retainedChats.get(request.id)
+    if (chat === undefined) throw new Error(`Conversation no longer exists in this browser session: ${request.id}`)
+
+    const accumulator = new UsageStatsAccumulator(request.timeZone)
+    accumulator.addChat(chat)
+    const statistics = accumulator.finish()
+    const summary = statistics.conversations[0]
+    if (summary === undefined) throw new Error(`Conversation statistics are unavailable: ${request.id}`)
+    worker.postMessage({
+        type: 'conversation-detail',
+        id: request.id,
+        summary,
+        days: statistics.days,
+        timeline: conversationTimeline(chat),
+    } satisfies Detail)
 }
 
 function relativeName(file: File): string {

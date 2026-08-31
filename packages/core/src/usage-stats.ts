@@ -4,6 +4,7 @@ export type UsageStatistics = {
     summary: UsageSummary
     days: UsageDay[]
     roles: UsageRole[]
+    conversations: ConversationSummary[]
 }
 
 export type UsageSummary = {
@@ -53,7 +54,30 @@ export type UsageRole = {
     messages: number
 }
 
+export type ConversationSummary = {
+    id: string
+    title: string
+    messages: number
+    roles: UsageRole[]
+    firstMessageAt?: string
+    lastMessageAt?: string
+    lifetimeMs?: number
+    activeDays: number
+}
+
+export type ConversationTimelineEvent = {
+    id: string
+    role: string
+    createTime: number
+}
+
 type MutableUsageConversation = UsageConversation
+type MutableConversationSummary = Omit<ConversationSummary, 'roles' | 'firstMessageAt' | 'lastMessageAt' | 'lifetimeMs' | 'activeDays'> & {
+    roles: Map<string, number>
+    dates: Set<string>
+    firstTimestamp?: number
+    lastTimestamp?: number
+}
 type MutableUsageDay = Omit<UsageDay, 'activeChats' | 'conversations'> & {
     conversations: Map<string, MutableUsageConversation>
 }
@@ -70,6 +94,7 @@ export class UsageStatsAccumulator {
     }
     private readonly days = new Map<string, MutableUsageDay>()
     private readonly roles = new Map<string, number>()
+    private readonly conversations = new Map<string, MutableConversationSummary>()
     private firstTimestamp: number | undefined
     private lastTimestamp: number | undefined
     private readonly dayFormatter: Intl.DateTimeFormat
@@ -93,7 +118,9 @@ export class UsageStatsAccumulator {
 
     addConversation(conversation: UsageConversationInput): void {
         this.summary.chats++
-        for (const message of conversation.messages) this.addMessage(conversation, message)
+        const summary = this.conversations.get(conversation.id) ?? createConversationSummary(conversation)
+        this.conversations.set(conversation.id, summary)
+        for (const message of conversation.messages) this.addMessage(conversation, message, summary)
     }
 
     finish(): UsageStatistics {
@@ -109,11 +136,16 @@ export class UsageStatsAccumulator {
             roles: [...this.roles]
                 .map(([role, messages]) => ({ role, messages }))
                 .sort((a, b) => b.messages - a.messages || a.role.localeCompare(b.role)),
+            conversations: [...this.conversations.values()]
+                .map(toConversationSummary)
+                .sort((a, b) => b.messages - a.messages || a.title.localeCompare(b.title)),
         }
     }
 
-    private addMessage(conversation: UsageConversationInput, message: UsageMessageInput): void {
+    private addMessage(conversation: UsageConversationInput, message: UsageMessageInput, summary: MutableConversationSummary): void {
         this.summary.messages++
+        summary.messages++
+        summary.roles.set(message.role, (summary.roles.get(message.role) ?? 0) + 1)
         this.roles.set(message.role, (this.roles.get(message.role) ?? 0) + 1)
         if (message.role === 'user') this.summary.prompts++
         if (message.role === 'assistant') this.summary.assistantMessages++
@@ -125,10 +157,13 @@ export class UsageStatsAccumulator {
         }
 
         this.summary.timestampedMessages++
+        summary.firstTimestamp = summary.firstTimestamp === undefined ? timestamp : Math.min(summary.firstTimestamp, timestamp)
+        summary.lastTimestamp = summary.lastTimestamp === undefined ? timestamp : Math.max(summary.lastTimestamp, timestamp)
         this.firstTimestamp = this.firstTimestamp === undefined ? timestamp : Math.min(this.firstTimestamp, timestamp)
         this.lastTimestamp = this.lastTimestamp === undefined ? timestamp : Math.max(this.lastTimestamp, timestamp)
 
         const date = this.dayKey(timestamp)
+        summary.dates.add(date)
         const day = this.days.get(date) ?? createDay(date)
         this.days.set(date, day)
         day.messages++
@@ -168,6 +203,12 @@ export class UsageStatsAccumulator {
     }
 }
 
+export function conversationTimeline(chat: Chat): ConversationTimelineEvent[] {
+    return [...walkMessages(chat.messages)]
+        .flatMap(message => message.createTime === undefined || !isValidTimestamp(message.createTime) ? [] : [{ id: message.id, role: message.role, createTime: message.createTime }])
+        .sort((a, b) => a.createTime - b.createTime)
+}
+
 export async function collectUsageStatistics(chats: AsyncIterable<Chat>, timeZone = 'UTC'): Promise<UsageStatistics> {
     const accumulator = new UsageStatsAccumulator(timeZone)
     for await (const chat of chats) accumulator.addChat(chat)
@@ -205,6 +246,23 @@ function createConversation(conversation: UsageConversationInput): MutableUsageC
         prompts: 0,
         assistantMessages: 0,
         otherMessages: 0,
+    }
+}
+
+function createConversationSummary(conversation: UsageConversationInput): MutableConversationSummary {
+    return { id: conversation.id, title: conversation.title, messages: 0, roles: new Map(), dates: new Set() }
+}
+
+function toConversationSummary(summary: MutableConversationSummary): ConversationSummary {
+    return {
+        id: summary.id,
+        title: summary.title,
+        messages: summary.messages,
+        roles: [...summary.roles].map(([role, messages]) => ({ role, messages })).sort((a, b) => b.messages - a.messages || a.role.localeCompare(b.role)),
+        firstMessageAt: summary.firstTimestamp === undefined ? undefined : new Date(summary.firstTimestamp).toISOString(),
+        lastMessageAt: summary.lastTimestamp === undefined ? undefined : new Date(summary.lastTimestamp).toISOString(),
+        lifetimeMs: summary.firstTimestamp === undefined || summary.lastTimestamp === undefined ? undefined : summary.lastTimestamp - summary.firstTimestamp,
+        activeDays: summary.dates.size,
     }
 }
 
