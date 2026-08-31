@@ -70,25 +70,34 @@ async function importFiles(request: ImportRequest): Promise<void> {
             }
         }
 
-        const reader = file.stream().getReader()
         let bytesRead = 0
-        while (true) {
-            const chunk = await reader.read()
-            if (chunk.done) break
-            parser.write(chunk.value)
-            bytesRead += chunk.value.byteLength
-            worker.postMessage({
-                type: 'progress',
-                fileName: relativeName(file),
-                fileIndex: fileIndex + 1,
-                fileCount: files.length,
-                bytesRead,
-                bytesTotal: file.size,
-                chats,
-                skipped,
-            } satisfies Progress)
+        try {
+            const reader = file.stream().getReader()
+            while (true) {
+                const chunk = await reader.read()
+                if (chunk.done) break
+                parser.write(chunk.value)
+                bytesRead += chunk.value.byteLength
+                worker.postMessage({
+                    type: 'progress',
+                    fileName: relativeName(file),
+                    fileIndex: fileIndex + 1,
+                    fileCount: files.length,
+                    bytesRead,
+                    bytesTotal: file.size,
+                    chats,
+                    skipped,
+                } satisfies Progress)
+            }
+
+            // The parser closes itself after a complete top-level array. Calling end twice reports a false malformed-export error.
+            if (!parser.isEnded) parser.end()
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            throw new Error(
+                `Failed to parse ${relativeName(file)} after ${formatBytes(bytesRead)} of ${formatBytes(file.size)}: ${message}`,
+            )
         }
-        parser.end()
     }
 
     worker.postMessage({
@@ -102,4 +111,8 @@ async function importFiles(request: ImportRequest): Promise<void> {
 
 function relativeName(file: File): string {
     return file.webkitRelativePath || file.name
+}
+
+function formatBytes(bytes: number): string {
+    return new Intl.NumberFormat('en', { style: 'unit', unit: 'byte', unitDisplay: 'short' }).format(bytes)
 }
