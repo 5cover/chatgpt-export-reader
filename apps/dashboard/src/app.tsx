@@ -9,7 +9,7 @@ type ImportState =
     | { kind: 'ready'; local: UsageStatistics; utc: UsageStatistics; skipped: number; durationMs: number }
     | { kind: 'error'; message: string }
 type TimeZoneMode = 'local' | 'utc'
-type Route = { page: 'overview' } | { page: 'conversations' } | { page: 'conversation'; id: string }
+type Route = { page: 'about' } | { page: 'overview' } | { page: 'conversations' } | { page: 'conversation'; id: string }
 type Detail = { summary: ConversationSummary; days: UsageDay[] }
 
 export function App() {
@@ -34,6 +34,7 @@ export function App() {
     const stats = state.kind === 'ready' ? (zone === 'local' ? state.local : state.utc) : undefined
     const importing = state.kind === 'loading'
     const selectedDay = stats?.days.find(day => day.date === selectedDate)
+    const visibleRoute: Route = stats ? route : { page: 'about' }
 
     useEffect(() => {
         if (route.page !== 'conversation' || !stats) return
@@ -47,7 +48,9 @@ export function App() {
             setState({ kind: 'loading', detail: `${message.fileName} (${message.fileIndex}/${message.fileCount}, ${percent}%) - ${message.chats} chats` })
         } else if (message.type === 'complete') {
             setState({ kind: 'ready', local: message.local, utc: message.utc, skipped: message.skipped, durationMs: message.durationMs })
+            setZone('local')
             setSelectedDate(busiestDay(message.local.days)?.date)
+            location.hash = '#/'
         } else if (message.type === 'conversation-detail') {
             setDetail({ summary: message.summary, days: message.days })
         } else setState({ kind: 'error', message: message.message })
@@ -69,21 +72,37 @@ export function App() {
             <button class="import-button" type="button" disabled={importing} onClick={() => input.current?.click()}>{importing ? 'Importing...' : 'Choose export folder'}</button>
             <input class="import-input" ref={input} type="file" multiple onChange={selectFolder} />
         </header>
-        {state.kind === 'idle' && <Welcome />}
+        <Nav route={visibleRoute} hasExport={Boolean(stats)} />
+        {!stats && <About />}
         {state.kind === 'loading' && <section class="status-card"><p class="eyebrow">Importing locally</p><strong>{state.detail}</strong><p>Files never leave this browser.</p></section>}
         {state.kind === 'error' && <section class="status-card error"><p class="eyebrow">Import failed</p><strong>{state.message}</strong></section>}
         {stats && <>
-            <Nav route={route} />
-            <div class="toolbar" role="group" aria-label="Calendar timezone"><span>Calendar timezone</span><button class={zone === 'local' ? 'active' : ''} onClick={() => setZone('local')}>Local</button><button class={zone === 'utc' ? 'active' : ''} onClick={() => setZone('utc')}>UTC</button>{state.kind === 'ready' && <small>Imported in {(state.durationMs / 1000).toFixed(1)}s{state.skipped ? `; ${state.skipped} invalid chats skipped` : ''}</small>}</div>
-            {route.page === 'overview' && <Overview stats={stats} selectedDay={selectedDay} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
-            {route.page === 'conversations' && <ConversationList conversations={stats.conversations} />}
-            {route.page === 'conversation' && <ConversationDetail detail={detail} />}
+            {visibleRoute.page !== 'about' && <div class="toolbar" role="group" aria-label="Calendar timezone"><span>Calendar timezone</span><button class={zone === 'local' ? 'active' : ''} onClick={() => setZone('local')}>Local</button><button class={zone === 'utc' ? 'active' : ''} onClick={() => setZone('utc')}>UTC</button>{state.kind === 'ready' && <small>Imported in {(state.durationMs / 1000).toFixed(1)}s{state.skipped ? `; ${state.skipped} invalid chats skipped` : ''}</small>}</div>}
+            {visibleRoute.page === 'overview' && <Overview stats={stats} selectedDay={selectedDay} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
+            {visibleRoute.page === 'conversations' && <ConversationList conversations={stats.conversations} />}
+            {visibleRoute.page === 'conversation' && <ConversationDetail detail={detail} />}
+            {visibleRoute.page === 'about' && <About />}
         </>}
     </main>
 }
 
-function Welcome() { return <section class="welcome-card"><p class="eyebrow">How it works</p><h2>Select the folder extracted from your ChatGPT data export.</h2><p>The dashboard keeps normalized chats in a local Worker for this browser session. Message bodies never leave your computer and are not shown in this statistics view.</p></section> }
-function Nav({ route }: { route: Route }) { return <nav class="nav"><a class={route.page === 'overview' ? 'active' : ''} href="#/">Overview</a><a class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''} href="#/conversations">Conversations</a></nav> }
+function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) {
+    return <nav class="nav" aria-label="Dashboard">
+        {hasExport && <><a class={route.page === 'overview' ? 'active' : ''} href="#/">Overview</a><a class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''} href="#/conversations">Conversations</a></>}
+        <a class={route.page === 'about' ? 'active' : ''} href="#/about">About</a>
+    </nav>
+}
+
+function About() {
+    return <section class="about-page">
+        <div class="page-heading"><p class="eyebrow">About this dashboard</p><h2>Usage analytics that stay on your computer.</h2><p>ChatGPT Usage Atlas is a static website for exploring the timestamps and structure in a ChatGPT data export. It does not require an account with this site.</p></div>
+        <div class="about-grid">
+            <section class="about-card"><p class="eyebrow">Use it</p><h3>Import an extracted ChatGPT export</h3><ol><li><a href="https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data" target="_blank" rel="noreferrer">Request a ChatGPT data export from OpenAI</a>.</li><li>Download the export from the email OpenAI sends, then extract the ZIP file.</li><li>Choose the extracted folder here. The dashboard reads its <code>conversations*.json</code> files.</li></ol></section>
+            <section class="about-card"><p class="eyebrow">Privacy</p><h3>Nothing is uploaded</h3><p>Your selected files are parsed in a Web Worker in this browser. The site makes no network request with your export, and it does not store a copy on disk or on a server.</p><p>Normalized conversations, including message content, remain only in the worker’s memory while this tab is open so the conversation views can be calculated. Message bodies are never displayed in the dashboard.</p></section>
+            <section class="about-card"><p class="eyebrow">Results</p><h3>How the figures are calculated</h3><p>Counts and charts come from timestamped conversation messages. Switch between local time and UTC to control how messages near midnight are assigned to calendar days.</p><p>The import screen reports malformed files or skipped conversations. Refreshing the page or closing the tab clears the imported data.</p></section>
+        </div>
+    </section>
+}
 
 function Overview({ stats, selectedDay, selectedDate, onSelectDate }: { stats: UsageStatistics; selectedDay?: UsageDay; selectedDate?: string; onSelectDate: (date: string) => void }) {
     return <><section class="summary-grid"><Metric label="Chats" value={stats.summary.chats} /><Metric label="Messages" value={stats.summary.messages} /><Metric label="User prompts" value={stats.summary.prompts} /><Metric label="Active days" value={stats.summary.activeDays} /></section><DailyChart days={stats.days} selectedDate={selectedDate} onSelectDate={onSelectDate} showPromptSummary />{selectedDay && <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Spike attribution</p><h2>{selectedDay.date}: {selectedDay.messages.toLocaleString()} messages</h2></div><span class="selected-date">{selectedDay.activeChats} active chats</span></div><SortableTable rows={selectedDay.conversations} columns={dayColumns(selectedDay.messages)} initialSort={{ column: 'messages', direction: 'descending' }} rowKey={chat => chat.id} /></section>}</>
@@ -119,7 +138,7 @@ function dayColumns(total: number): readonly SortableColumn<UsageDay['conversati
 ] }
 function compareOptionalNumber(a?: number, b?: number): number { return (a ?? Number.NEGATIVE_INFINITY) - (b ?? Number.NEGATIVE_INFINITY) }
 function compareOptionalDate(a?: string, b?: string): number { return compareOptionalNumber(a ? Date.parse(a) : undefined, b ? Date.parse(b) : undefined) }
-function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/'); return page === 'conversations' ? id ? { page: 'conversation', id: decodeURIComponent(id) } : { page: 'conversations' } : { page: 'overview' } }
+function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/'); return page === 'conversations' ? id ? { page: 'conversation', id: decodeURIComponent(id) } : { page: 'conversations' } : page === 'about' ? { page: 'about' } : { page: 'overview' } }
 
 type WorkerMessage =
     | { type: 'progress'; fileName: string; fileIndex: number; fileCount: number; bytesRead: number; bytesTotal: number; chats: number }
