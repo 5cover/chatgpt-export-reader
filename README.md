@@ -13,6 +13,17 @@ node dist/cli.js conversations.json --output-format stats --export-format filesy
 
 The report contains `stats.json`, CSV tables for daily and role counts, and an SVG line chart of daily message and user-prompt activity. Daily data uses UTC and includes every calendar day from the first timestamped message to the last.
 
+## Usage dashboard
+
+The browser dashboard is a local-only companion for investigating usage spikes. It accepts the folder extracted from a ChatGPT export, discovers every `conversations*.json` file, and processes it in a Web Worker. Raw export data is never uploaded or persisted by the site.
+
+```sh
+pnpm build:dashboard
+pnpm --filter @chatgpt-export-reader/dashboard dev
+```
+
+It provides a zoomable daily messages/prompts chart, a browser-local or UTC day grouping toggle, and a ranked list of conversations contributing to any selected day. The static dashboard deploys to GitHub Pages on pushes to `main`.
+
 ## Step 3
 
 - Max label size configurable (default 50)

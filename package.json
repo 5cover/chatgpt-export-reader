@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "",
     "main": "dist/cli.js",
-  "scripts": {
+    "scripts": {
         "build": "pnpm --filter @chatgpt-export-reader/core build && tsc --incremental",
-    "test": "echo \"Error: no test specified\" && exit 1",
+        "build:dashboard": "pnpm --filter @chatgpt-export-reader/dashboard build",
+        "build:all": "pnpm build && pnpm build:dashboard",
+        "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint"
   },
   "type": "module",
