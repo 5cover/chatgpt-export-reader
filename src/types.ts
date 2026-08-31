@@ -1,3 +1,5 @@
+import type { Chat, Message, Thought } from '@chatgpt-export-reader/core'
+
 export type { Chat, Message, Thought } from '@chatgpt-export-reader/core'
 
 export type ArtifactTree = Map<string, string | ArtifactTree>
