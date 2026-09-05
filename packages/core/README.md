@@ -20,3 +20,14 @@ const accumulator = new UsageStatsAccumulator({
     startDate: '2025-01-01',
 })
 ```
+
+For text-volume, temporal, and session analytics, use `collectAnalytics`. It counts literal normalized message bodies locally, separates user input from assistant output, and returns daily, weekday-hour, conversation, and observed-session aggregates.
+
+```ts
+import { collectAnalytics } from '@chatgpt-export-reader/core'
+
+const analytics = collectAnalytics(chats, {
+    timeZone: 'Europe/Paris',
+    sessionGapMinutes: 60,
+})
+```

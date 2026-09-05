@@ -1,4 +1,4 @@
-import type { UsageDay } from '@chatgpt-export-reader/core'
+import type { AnalyticsDay } from '@chatgpt-export-reader/core'
 
 type PromptBin = {
     from: number
@@ -6,7 +6,7 @@ type PromptBin = {
     days: number
 }
 
-export function PromptHistogram({ days }: { days: readonly UsageDay[] }) {
+export function PromptHistogram({ days }: { days: readonly AnalyticsDay[] }) {
     const bins = buildPromptBins(days.map(day => day.prompts))
     const largestBin = Math.max(...bins.map(bin => bin.days), 1)
 

@@ -1,52 +1,53 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { ConversationSummary, UsageDay, UsageStatistics } from '@chatgpt-export-reader/core'
-import { DailyChart } from './daily-chart.js'
+import type { AnalyticsDay, AnalyticsStatistics, ConversationAnalytics, ConversationDetail, DayConversation, MessageContent, SessionAnalytics, TurnPage, TextMetrics } from '@chatgpt-export-reader/core'
+import { DailyChart, type DailyMetric, metricLabel, metricValue } from './daily-chart.js'
 import { PromptHistogram } from './prompt-histogram.js'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
 
 type ImportState =
     | { kind: 'idle' }
     | { kind: 'loading'; detail: string }
-    | { kind: 'ready'; local: UsageStatistics; utc: UsageStatistics; skipped: number; durationMs: number; startDate?: string }
+    | { kind: 'ready'; local: AnalyticsStatistics; utc: AnalyticsStatistics; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
     | { kind: 'error'; message: string }
 type TimeZoneMode = 'local' | 'utc'
-type Route = { page: 'about' } | { page: 'overview' } | { page: 'conversations' } | { page: 'conversation'; id: string }
-type Detail =
-    | { kind: 'ready'; summary: ConversationSummary; days: UsageDay[] }
-    | { kind: 'missing' }
-    | { kind: 'error'; message: string }
+type Route = { page: 'about' } | { page: 'overview' } | { page: 'patterns' } | { page: 'conversations' } | { page: 'conversation'; id: string }
+type DetailState = { kind: 'ready'; detail: ConversationDetail } | { kind: 'missing' } | { kind: 'error'; message: string }
 
 export function App() {
     const input = useRef<HTMLInputElement>(null)
     const worker = useRef<Worker>()
-    const nextRequestId = useRef(0)
-    const activeImportRequest = useRef<number>()
-    const activeStatisticsRequest = useRef<number>()
-    const activeDetailRequest = useRef<number>()
+    const nextRequest = useRef(0)
+    const activeImport = useRef<number>()
+    const activeStatistics = useRef<number>()
+    const activeDetail = useRef<number>()
+    const activeOutline = useRef<number>()
+    const activeContent = useRef<number>()
     const zoneRef = useRef<TimeZoneMode>('local')
-    const appliedStartDateRef = useRef<string>()
     const [state, setState] = useState<ImportState>({ kind: 'idle' })
     const [zone, setZone] = useState<TimeZoneMode>('local')
     const [route, setRoute] = useState<Route>(readRoute)
-    const [detail, setDetail] = useState<Detail | undefined>()
-    const [selectedDate, setSelectedDate] = useState<string>()
     const [startDate, setStartDate] = useState<string>()
-    const [filtering, setFiltering] = useState(false)
-    const [filterError, setFilterError] = useState<string>()
+    const [sessionGapMinutes, setSessionGapMinutes] = useState(60)
+    const [updating, setUpdating] = useState(false)
+    const [controlError, setControlError] = useState<string>()
+    const [selectedDate, setSelectedDate] = useState<string>()
+    const [detail, setDetail] = useState<DetailState>()
+    const [outline, setOutline] = useState<TurnPage>()
+    const [outlineQuery, setOutlineQuery] = useState('')
+    const [contents, setContents] = useState<Record<string, string>>({})
 
     zoneRef.current = zone
-    const appliedStartDate = state.kind === 'ready' ? state.startDate : undefined
-    appliedStartDateRef.current = appliedStartDate
-    const stats = state.kind === 'ready' ? (zone === 'local' ? state.local : state.utc) : undefined
-    const importing = state.kind === 'loading'
-    const selectedDay = stats?.days.find(day => day.date === selectedDate)
+    const readyState = state.kind === 'ready' ? state : undefined
+    const appliedStartDate = readyState?.startDate
+    const appliedGap = readyState?.sessionGapMinutes ?? sessionGapMinutes
+    const stats = readyState === undefined ? undefined : zone === 'local' ? readyState.local : readyState.utc
     const visibleRoute: Route = stats ? route : { page: 'about' }
 
     useEffect(() => {
         input.current?.setAttribute('webkitdirectory', '')
         const nextWorker = new Worker(new URL('./stats-worker.ts', import.meta.url), { type: 'module' })
         worker.current = nextWorker
-        nextWorker.addEventListener('message', event => receiveWorkerMessage(event.data as WorkerMessage))
+        nextWorker.addEventListener('message', event => receive(event.data as WorkerMessage))
         const onHashChange = () => setRoute(readRoute())
         addEventListener('hashchange', onHashChange)
         return () => { nextWorker.terminate(); removeEventListener('hashchange', onHashChange) }
@@ -54,189 +55,190 @@ export function App() {
 
     useEffect(() => {
         if (route.page !== 'conversation' || !stats) return
-        if (!stats.conversations.some(chat => chat.id === route.id)) {
-            setDetail({ kind: 'missing' })
-            return
-        }
-        const requestId = ++nextRequestId.current
-        activeDetailRequest.current = requestId
+        if (!stats.conversations.some(chat => chat.id === route.id)) { setDetail({ kind: 'missing' }); return }
+        const requestId = ++nextRequest.current
+        activeDetail.current = requestId
         setDetail(undefined)
-        worker.current?.postMessage({
-            type: 'conversation-detail',
-            requestId,
-            id: route.id,
-            timeZone: zone === 'local' ? localTimeZone() : 'UTC',
-            startDate: appliedStartDate,
-        })
-    }, [route, zone, stats, appliedStartDate])
+        setOutline(undefined)
+        setContents({})
+        worker.current?.postMessage({ type: 'conversation-detail', requestId, id: route.id, timeZone: selectedTimeZone(zone), startDate: appliedStartDate, sessionGapMinutes: appliedGap })
+        loadOutline(route.id, 0, undefined)
+    }, [route, stats, zone, appliedStartDate, appliedGap])
 
-    function receiveWorkerMessage(message: WorkerMessage) {
+    function receive(message: WorkerMessage) {
         if (message.type === 'progress') {
-            if (message.requestId !== activeImportRequest.current) return
-            const percent = message.bytesTotal === 0 ? 0 : Math.round((message.bytesRead / message.bytesTotal) * 100)
+            if (message.requestId !== activeImport.current) return
+            const percent = message.bytesTotal ? Math.round(message.bytesRead / message.bytesTotal * 100) : 0
             setState({ kind: 'loading', detail: `${message.fileName} (${message.fileIndex}/${message.fileCount}, ${percent}%) - ${message.chats} chats` })
         } else if (message.type === 'complete') {
-            if (message.requestId !== activeImportRequest.current) return
-            activeImportRequest.current = undefined
-            setState({ kind: 'ready', local: message.local, utc: message.utc, skipped: message.skipped, durationMs: message.durationMs, startDate: message.startDate })
-            setFiltering(false)
-            setFilterError(undefined)
+            if (message.requestId !== activeImport.current) return
+            activeImport.current = undefined
+            setState({ kind: 'ready', local: message.local, utc: message.utc, skipped: message.skipped, durationMs: message.durationMs, startDate: message.startDate, sessionGapMinutes: message.sessionGapMinutes })
+            setStartDate(message.startDate)
+            setSessionGapMinutes(message.sessionGapMinutes)
             setZone('local')
             setSelectedDate(busiestDay(message.local.days)?.date)
+            setUpdating(false)
             location.hash = '#/'
         } else if (message.type === 'statistics') {
-            if (message.requestId !== activeStatisticsRequest.current) return
-            activeStatisticsRequest.current = undefined
-            setState(current => current.kind === 'ready'
-                ? { ...current, local: message.local, utc: message.utc, startDate: message.startDate }
-                : current)
-            setFiltering(false)
-            setFilterError(undefined)
+            if (message.requestId !== activeStatistics.current) return
+            activeStatistics.current = undefined
+            setState(current => current.kind === 'ready' ? { ...current, local: message.local, utc: message.utc, startDate: message.startDate, sessionGapMinutes: message.sessionGapMinutes } : current)
             setSelectedDate(busiestDay(zoneRef.current === 'local' ? message.local.days : message.utc.days)?.date)
+            setUpdating(false)
+            setControlError(undefined)
         } else if (message.type === 'conversation-detail') {
-            if (message.requestId !== activeDetailRequest.current) return
-            activeDetailRequest.current = undefined
-            setDetail({ kind: 'ready', summary: message.summary, days: message.days })
+            if (message.requestId !== activeDetail.current) return
+            activeDetail.current = undefined
+            setDetail(message.detail ? { kind: 'ready', detail: message.detail } : { kind: 'missing' })
+        } else if (message.type === 'conversation-outline') {
+            if (message.requestId !== activeOutline.current) return
+            activeOutline.current = undefined
+            setOutline(message.page)
+        } else if (message.type === 'message-content') {
+            if (message.requestId !== activeContent.current) return
+            activeContent.current = undefined
+            setContents(current => ({ ...current, ...Object.fromEntries(message.contents.map(content => [content.id, content.body])) }))
         } else if (message.operation === 'import') {
-            if (message.requestId !== activeImportRequest.current) return
-            activeImportRequest.current = undefined
+            if (message.requestId !== activeImport.current) return
+            activeImport.current = undefined
             setState({ kind: 'error', message: message.message })
         } else if (message.operation === 'statistics') {
-            if (message.requestId !== activeStatisticsRequest.current) return
-            activeStatisticsRequest.current = undefined
-            setFiltering(false)
-            setStartDate(appliedStartDateRef.current)
-            setFilterError(message.message)
+            if (message.requestId !== activeStatistics.current) return
+            activeStatistics.current = undefined
+            setStartDate(appliedStartDate)
+            setSessionGapMinutes(appliedGap)
+            setUpdating(false)
+            setControlError(message.message)
+        } else if (message.operation === 'conversation-detail') {
+            if (message.requestId !== activeDetail.current) return
+            activeDetail.current = undefined
+            setDetail({ kind: 'error', message: message.message })
+        } else if (message.operation === 'conversation-outline') {
+            if (message.requestId !== activeOutline.current) return
+            activeOutline.current = undefined
+            setDetail({ kind: 'error', message: message.message })
         } else {
-            if (message.requestId !== activeDetailRequest.current) return
-            activeDetailRequest.current = undefined
+            if (message.requestId !== activeContent.current) return
+            activeContent.current = undefined
             setDetail({ kind: 'error', message: message.message })
         }
     }
 
-    function selectFolder(event: Event) {
+    function chooseFolder(event: Event) {
         const picker = event.currentTarget as HTMLInputElement
         const files = [...picker.files ?? []]
         picker.value = ''
         if (files.length === 0) return
-        const requestId = ++nextRequestId.current
-        activeImportRequest.current = requestId
-        activeStatisticsRequest.current = undefined
-        activeDetailRequest.current = undefined
-        setDetail(undefined)
-        setFiltering(false)
-        setFilterError(undefined)
-        setState({ kind: 'loading', detail: 'Preparing local import...' })
-        worker.current?.postMessage({ type: 'import', requestId, files, localTimeZone: localTimeZone(), startDate })
+        const requestId = ++nextRequest.current
+        activeImport.current = requestId
+        activeStatistics.current = undefined
+        setState({ kind: 'loading', detail: 'Preparing local analytics...' })
+        worker.current?.postMessage({ type: 'import', requestId, files, localTimeZone: localTimeZone(), startDate, sessionGapMinutes })
     }
 
-    function applyStartDate(nextStartDate: string | undefined) {
-        if (nextStartDate === startDate || state.kind !== 'ready') return
-        const requestId = ++nextRequestId.current
-        activeStatisticsRequest.current = requestId
-        activeDetailRequest.current = undefined
+    function applyOptions(nextStartDate = startDate, nextGap = sessionGapMinutes) {
+        if (state.kind !== 'ready' || !Number.isInteger(nextGap) || nextGap < 1 || nextGap > 1_440) return
+        const requestId = ++nextRequest.current
+        activeStatistics.current = requestId
+        activeDetail.current = undefined
         setStartDate(nextStartDate)
-        setDetail(undefined)
-        setFiltering(true)
-        setFilterError(undefined)
-        worker.current?.postMessage({ type: 'statistics', requestId, localTimeZone: localTimeZone(), startDate: nextStartDate })
+        setSessionGapMinutes(nextGap)
+        setUpdating(true)
+        setControlError(undefined)
+        worker.current?.postMessage({ type: 'statistics', requestId, localTimeZone: localTimeZone(), startDate: nextStartDate, sessionGapMinutes: nextGap })
     }
 
-    function selectZone(nextZone: TimeZoneMode) {
-        if (nextZone === zone) return
-        setZone(nextZone)
-        if (state.kind === 'ready') setSelectedDate(busiestDay(nextZone === 'local' ? state.local.days : state.utc.days)?.date)
+    function loadOutline(id: string, offset = 0, query = outlineQuery || undefined) {
+        const requestId = ++nextRequest.current
+        activeOutline.current = requestId
+        worker.current?.postMessage({ type: 'conversation-outline', requestId, id, timeZone: selectedTimeZone(zone), startDate: appliedStartDate, sessionGapMinutes: appliedGap, offset, limit: 50, query })
+    }
+
+    function openContent(id: string) {
+        if (contents[id] !== undefined || route.page !== 'conversation') return
+        const requestId = ++nextRequest.current
+        activeContent.current = requestId
+        worker.current?.postMessage({ type: 'message-content', requestId, id: route.id, timeZone: selectedTimeZone(zone), startDate: appliedStartDate, sessionGapMinutes: appliedGap, ids: [id] })
     }
 
     return <main>
-        <header class="masthead">
-            <div><p class="eyebrow">Private local analytics</p><h1>ChatGPT Usage Atlas</h1><p class="subtitle">Find the conversations behind your busiest days.</p></div>
-            <button class="import-button" type="button" disabled={importing} onClick={() => input.current?.click()}>{importing ? 'Importing...' : 'Choose export folder'}</button>
-            <input class="import-input" ref={input} type="file" multiple onChange={selectFolder} />
-        </header>
+        <header class="masthead"><div><p class="eyebrow">Private local analytics</p><h1>ChatGPT Usage Atlas</h1><p class="subtitle">Measure the scale, rhythm, and intensity of your own usage.</p></div><button class="import-button" type="button" disabled={state.kind === 'loading'} onClick={() => input.current?.click()}>{state.kind === 'loading' ? 'Importing...' : 'Choose export folder'}</button><input class="import-input" ref={input} type="file" multiple onChange={chooseFolder} /></header>
         <Nav route={visibleRoute} hasExport={Boolean(stats)} />
         {!stats && <About />}
-        {state.kind === 'loading' && <section class="status-card"><p class="eyebrow">Importing locally</p><strong>{state.detail}</strong><p>Files never leave this browser.</p></section>}
-        {state.kind === 'error' && <section class="status-card error"><p class="eyebrow">Import failed</p><strong>{state.message}</strong></section>}
+        {state.kind === 'loading' && <Status title="Importing locally" detail={state.detail} />}
+        {state.kind === 'error' && <Status title="Import failed" detail={state.message} error />}
         {stats && <>
-            {visibleRoute.page !== 'about' && <div class="toolbar" aria-label="Statistics controls">
-                <div class="toolbar-group" role="group" aria-label="Calendar timezone"><span>Calendar timezone</span><button class={zone === 'local' ? 'active' : ''} onClick={() => selectZone('local')}>Local</button><button class={zone === 'utc' ? 'active' : ''} onClick={() => selectZone('utc')}>UTC</button></div>
-                <label class="date-filter">Measure from <input type="date" value={startDate ?? ''} onChange={event => applyStartDate(event.currentTarget.value || undefined)} /></label>
-                <button type="button" disabled={!startDate || filtering} onClick={() => applyStartDate(undefined)}>All time</button>
-                <small class={filterError ? 'range-status error-text' : 'range-status'}>{filtering ? 'Updating locally...' : filterError ?? (appliedStartDate ? `Inclusive from ${appliedStartDate} in ${zone === 'local' ? 'local time' : 'UTC'}` : 'All time')}</small>
-                {state.kind === 'ready' && <small class="import-summary">Imported in {(state.durationMs / 1000).toFixed(1)}s{state.skipped ? `; ${state.skipped} invalid chats skipped` : ''}</small>}
-            </div>}
-            {visibleRoute.page === 'overview' && <Overview stats={stats} selectedDay={selectedDay} selectedDate={selectedDate} startDate={appliedStartDate} onSelectDate={setSelectedDate} />}
-            {visibleRoute.page === 'conversations' && <ConversationList conversations={stats.conversations} startDate={appliedStartDate} />}
-            {visibleRoute.page === 'conversation' && <ConversationDetail detail={detail} startDate={appliedStartDate} />}
+            {visibleRoute.page !== 'about' && readyState && <Controls zone={zone} startDate={startDate} gap={sessionGapMinutes} updating={updating} error={controlError} imported={readyState.durationMs} skipped={readyState.skipped} onZone={next => { setZone(next); setSelectedDate(busiestDay(next === 'local' ? readyState.local.days : readyState.utc.days)?.date) }} onStartDate={next => applyOptions(next || undefined)} onGap={next => applyOptions(startDate, next)} onReset={() => applyOptions(undefined)} />}
+            {visibleRoute.page === 'overview' && <Overview stats={stats} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
+            {visibleRoute.page === 'patterns' && <Patterns stats={stats} zone={zone} />}
+            {visibleRoute.page === 'conversations' && <ConversationList conversations={stats.conversations} />}
+            {visibleRoute.page === 'conversation' && <ConversationView detail={detail} outline={outline} query={outlineQuery} contents={contents} onSearch={query => { setOutlineQuery(query); if (route.page === 'conversation') loadOutline(route.id, 0, query || undefined) }} onPage={offset => route.page === 'conversation' && loadOutline(route.id, offset)} onOpen={openContent} />}
             {visibleRoute.page === 'about' && <About />}
         </>}
     </main>
 }
 
-function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) {
-    return <nav class="nav" aria-label="Dashboard">
-        {hasExport && <><a class={route.page === 'overview' ? 'active' : ''} href="#/">Overview</a><a class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''} href="#/conversations">Conversations</a></>}
-        <a class={route.page === 'about' ? 'active' : ''} href="#/about">About</a>
-    </nav>
-}
-
-function About() {
-    return <section class="about-page">
-        <div class="page-heading"><p class="eyebrow">About this dashboard</p><h2>Usage analytics that stay on your computer.</h2><p>ChatGPT Usage Atlas is a static website for exploring the timestamps and structure in a ChatGPT data export. It does not require an account with this site.</p></div>
-        <div class="about-grid">
-            <section class="about-card"><p class="eyebrow">Use it</p><h3>Import an extracted ChatGPT export</h3><ol><li><a href="https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data" target="_blank" rel="noreferrer">Request a ChatGPT data export from OpenAI</a>.</li><li>Download the export from the email OpenAI sends, then extract the ZIP file.</li><li>Choose the extracted folder here. The dashboard reads its <code>conversations*.json</code> files.</li></ol></section>
-            <section class="about-card"><p class="eyebrow">Privacy</p><h3>Nothing is uploaded</h3><p>Your selected files are parsed in a Web Worker in this browser. The site makes no network request with your export, and it does not store a copy on disk or on a server.</p><p>Normalized conversations, including message content, remain only in the worker’s memory while this tab is open so the conversation views can be calculated. Message bodies are never displayed in the dashboard.</p></section>
-            <section class="about-card"><p class="eyebrow">Results</p><h3>How the figures are calculated</h3><p>Counts and charts come from timestamped conversation messages. Switch between local time and UTC to control how messages near midnight are assigned to calendar days.</p><p>Use Measure from to exclude earlier messages from every statistic. Refreshing the page or closing the tab clears the imported data and selected cutoff.</p></section>
-        </div>
-    </section>
-}
-
-function Overview({ stats, selectedDay, selectedDate, startDate, onSelectDate }: { stats: UsageStatistics; selectedDay?: UsageDay; selectedDate?: string; startDate?: string; onSelectDate: (date: string) => void }) {
-    const empty = stats.summary.messages === 0
-    return <><section class="summary-grid"><Metric label="Chats" value={stats.summary.chats} /><Metric label="Messages" value={stats.summary.messages} /><Metric label="User prompts" value={stats.summary.prompts} /><Metric label="Active days" value={stats.summary.activeDays} /></section>{empty ? <EmptyResults startDate={startDate} /> : <><DailyChart days={stats.days} selectedDate={selectedDate} onSelectDate={onSelectDate} showPromptSummary /><PromptHistogram days={stats.days} />{selectedDay && <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Spike attribution</p><h2>{selectedDay.date}: {selectedDay.messages.toLocaleString()} messages</h2></div><span class="selected-date">{selectedDay.activeChats} active chats</span></div><SortableTable rows={selectedDay.conversations} columns={dayColumns(selectedDay.messages)} initialSort={{ column: 'messages', direction: 'descending' }} rowKey={chat => chat.id} /></section>}</>}</>
-}
-
-function ConversationList({ conversations, startDate }: { conversations: readonly ConversationSummary[]; startDate?: string }) {
-    const [query, setQuery] = useState('')
-    const visible = useMemo(() => conversations.filter(chat => `${chat.title} ${chat.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())), [conversations, query])
-    return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">All conversations</p><h2>{conversations.length.toLocaleString()} chats</h2></div><input class="search" value={query} onInput={event => setQuery(event.currentTarget.value)} placeholder="Search title or ID" /></div>{visible.length === 0 ? <p class="empty-table">{query ? 'No conversations match this search.' : startDate ? `No conversations have messages on or after ${startDate}.` : 'No conversations are available.'}</p> : <SortableTable rows={visible} columns={conversationColumns} initialSort={{ column: 'messages', direction: 'descending' }} rowKey={chat => chat.id} />}</section>
-}
-
-function ConversationDetail({ detail, startDate }: { detail?: Detail; startDate?: string }) {
-    if (detail === undefined) return <section class="status-card"><p class="eyebrow">Loading conversation</p><strong>Calculating its timeline and daily activity locally...</strong></section>
-    if (detail.kind === 'missing') return <section class="status-card"><p class="eyebrow">Conversation unavailable</p><strong>{startDate ? `This chat has no messages on or after ${startDate}.` : 'This chat is unavailable in the current statistics.'}</strong></section>
-    if (detail.kind === 'error') return <section class="status-card error"><p class="eyebrow">Conversation unavailable</p><strong>{detail.message}</strong></section>
-    const { summary, days } = detail
-    const prompts = summary.roles.find(role => role.role === 'user')?.messages ?? 0
-    return <><section class="detail-card"><p class="eyebrow">Conversation detail</p><h2>{summary.title || 'Untitled chat'}</h2><code>{summary.id}</code><section class="summary-grid"><Metric label="Messages" value={summary.messages} /><Metric label="User prompts" value={prompts} /><Metric label="Active days" value={summary.activeDays} /><Metric label="Lifetime" value={formatDuration(summary.lifetimeMs)} /></section><p>{formatDate(summary.firstMessageAt)} to {formatDate(summary.lastMessageAt)}</p></section><DailyChart days={days} title="Activity across this chat's lifetime" note="Bars show all messages and user prompts across this conversation's active lifetime." onSelectDate={() => {}} /></>
-}
-
-function EmptyResults({ startDate }: { startDate?: string }) { return <section class="status-card"><p class="eyebrow">No matching messages</p><strong>{startDate ? `No timestamped messages fall on or after ${startDate}.` : 'This export has no timestamped messages.'}</strong><p>Choose an earlier start date or reset the range to all time.</p></section> }
-function Metric({ label, value }: { label: string; value: number | string }) { return <div class="metric"><span>{label}</span><strong>{typeof value === 'number' ? value.toLocaleString() : value}</strong></div> }
-function busiestDay(days: readonly UsageDay[]): UsageDay | undefined { return days.reduce<UsageDay | undefined>((best, day) => !best || day.messages > best.messages ? day : best, undefined) }
-function formatDate(value?: string): string { return value ? new Date(value).toLocaleString() : 'No timestamp' }
-function formatDuration(value?: number): string { if (value === undefined) return 'No duration'; const hours = Math.floor(value / 3_600_000); const days = Math.floor(hours / 24); return days ? `${days}d ${hours % 24}h` : `${hours}h ${Math.floor(value / 60_000) % 60}m` }
+function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) { return <nav class="nav" aria-label="Dashboard">{hasExport && <><a class={route.page === 'overview' ? 'active' : ''} href="#/">Overview</a><a class={route.page === 'patterns' ? 'active' : ''} href="#/patterns">Patterns</a><a class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''} href="#/conversations">Conversations</a></>}<a class={route.page === 'about' ? 'active' : ''} href="#/about">About</a></nav> }
+function Controls({ zone, startDate, gap, updating, error, imported, skipped, onZone, onStartDate, onGap, onReset }: { zone: TimeZoneMode; startDate?: string; gap: number; updating: boolean; error?: string; imported: number; skipped: number; onZone: (zone: TimeZoneMode) => void; onStartDate: (date: string) => void; onGap: (gap: number) => void; onReset: () => void }) { return <div class="toolbar"><div class="toolbar-group"><span>Calendar</span><button class={zone === 'local' ? 'active' : ''} onClick={() => onZone('local')}>Local</button><button class={zone === 'utc' ? 'active' : ''} onClick={() => onZone('utc')}>UTC</button></div><label class="date-filter">Measure from <input type="date" value={startDate ?? ''} onChange={event => onStartDate(event.currentTarget.value)} /></label><button disabled={!startDate || updating} onClick={onReset}>All time</button><label class="gap-filter">Session gap <input type="number" min="1" max="1440" value={gap} onChange={event => onGap(Number(event.currentTarget.value))} /> min</label><small class={error ? 'range-status error-text' : 'range-status'}>{updating ? 'Updating locally...' : error ?? `Observed sessions split after ${gap} minutes`}</small><small class="import-summary">Imported in {(imported / 1000).toFixed(1)}s{skipped ? `; ${skipped} invalid chats skipped` : ''}</small></div> }
+function Overview({ stats, selectedDate, onSelectDate }: { stats: AnalyticsStatistics; selectedDate?: string; onSelectDate: (date: string) => void }) { const [metric, setMetric] = useState<DailyMetric>('prompts'); const selected = stats.days.find(day => day.date === selectedDate); return <><section class="summary-grid analytics-metrics"><Metric label="Chats" value={stats.summary.chats} /><Metric label="Sessions" value={stats.summary.sessions} /><Metric label="Prompts" value={stats.summary.prompts} /><Metric label="Input words" value={stats.summary.input.words} /><Metric label="Output words" value={stats.summary.output.words} /><Metric label="Input characters" value={stats.summary.input.characters} /><Metric label="Output characters" value={stats.summary.output.characters} /><Metric label="Output / input" value={ratio(stats.summary.output, stats.summary.input)} /></section><section class="metric-picker"><span>Daily measure</span>{(['prompts', 'messages', 'inputWords', 'outputWords', 'totalWords'] as DailyMetric[]).map(value => <button class={metric === value ? 'active' : ''} onClick={() => setMetric(value)}>{metricLabel(value)}</button>)}</section><DailyChart days={stats.days} metric={metric} selectedDate={selectedDate} onSelectDate={onSelectDate} /><CalendarHeatmap days={stats.days} metric={metric} /><PromptHistogram days={stats.days} />{selected && <DayAttribution day={selected} />}<Concentration conversations={stats.conversations} /></> }
+function Patterns({ stats, zone }: { stats: AnalyticsStatistics; zone: TimeZoneMode }) { const [metric, setMetric] = useState<'prompts' | 'input' | 'output'>('prompts'); return <><section class="summary-grid"><Metric label="Active days" value={stats.summary.activeDays} /><Metric label="Median session prompts" value={median(stats.sessions.map(session => session.prompts)).toFixed(1)} /><Metric label="Sessions over 25 prompts" value={stats.sessions.filter(session => session.prompts > 25).length} /><Metric label="Sessions over 100 prompts" value={stats.sessions.filter(session => session.prompts > 100).length} /></section><section class="metric-picker"><span>Heatmap measure</span>{(['prompts', 'input', 'output'] as const).map(value => <button class={metric === value ? 'active' : ''} onClick={() => setMetric(value)}>{value === 'prompts' ? 'Prompts' : `${value === 'input' ? 'Input' : 'Output'} words`}</button>)}</section><HourHeatmap cells={stats.hours} metric={metric} /><section class="two-up"><SessionDistribution sessions={stats.sessions} /><SessionStarts sessions={stats.sessions} utc={zone === 'utc'} /></section><section class="two-up"><SessionScatter sessions={stats.sessions} /><Continuation sessions={stats.sessions} /></section><SessionTable sessions={stats.sessions.slice().sort((a, b) => b.prompts - a.prompts).slice(0, 25)} /></> }
+function ConversationList({ conversations }: { conversations: readonly ConversationAnalytics[] }) { const [query, setQuery] = useState(''); const rows = useMemo(() => conversations.filter(chat => `${chat.title} ${chat.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())), [conversations, query]); return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Conversation inventory</p><h2>Where the volume comes from.</h2></div><input class="search" value={query} onInput={event => setQuery(event.currentTarget.value)} placeholder="Search title or ID" /></div><SortableTable rows={rows} columns={conversationColumns} initialSort={{ column: 'output', direction: 'descending' }} rowKey={chat => chat.id} /></section> }
+function ConversationView({ detail, outline, query, contents, onSearch, onPage, onOpen }: { detail?: DetailState; outline?: TurnPage; query: string; contents: Record<string, string>; onSearch: (query: string) => void; onPage: (offset: number) => void; onOpen: (id: string) => void }) { if (detail === undefined) return <Status title="Loading conversation" detail="Calculating structure and evidence locally..." />; if (detail.kind === 'missing') return <Status title="Conversation unavailable" detail="No messages fit the current date range." />; if (detail.kind === 'error') return <Status title="Conversation unavailable" detail={detail.message} error />; const value = detail.detail; return <><section class="detail-card"><p class="eyebrow">Conversation evidence</p><h2>{value.summary.title || 'Untitled chat'}</h2><code>{value.summary.id}</code><section class="summary-grid"><Metric label="Prompts" value={value.summary.prompts} /><Metric label="Input words" value={value.summary.input.words} /><Metric label="Output words" value={value.summary.output.words} /><Metric label="Output / input" value={ratio(value.summary.output, value.summary.input)} /><Metric label="Sessions" value={value.summary.sessions} /><Metric label="Active days" value={value.summary.activeDays} /><Metric label="Lifetime" value={value.summary.lifetimeMs === undefined ? 'No duration' : formatDuration(value.summary.lifetimeMs)} /></section></section><SessionCards sessions={value.sessions} /><TurnTimeline bins={value.turnBins} total={value.totalTurns} onSelect={bin => onPage(bin.startIndex - 1)} /><section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Turn outline</p><h2>Literal evidence, not an inferred summary.</h2></div><input class="search" value={query} onInput={event => onSearch(event.currentTarget.value)} placeholder="Search exact text" /></div>{outline === undefined ? <p>Loading outline...</p> : <><p class="chart-note">{outline.total.toLocaleString()} matching turns. Select a row to reveal its local text.</p><div class="turn-list">{outline.turns.map(turn => <article class={`turn ${turn.role}`} onClick={() => onOpen(turn.id)}><span>#{turn.index} · {turn.role} · {turn.input.words || turn.output.words} words · session {turn.session || 'untimed'}</span><strong>{turn.preview}</strong>{contents[turn.id] && <pre>{contents[turn.id]}</pre>}</article>)}</div>{outline.offset > 0 && <button onClick={() => onPage(Math.max(0, outline.offset - 50))}>Previous 50 turns</button>} {outline.offset + outline.turns.length < outline.total && <button onClick={() => onPage(outline.offset + outline.turns.length)}>Next 50 turns</button>}</>}</section></> }
+function DayAttribution({ day }: { day: AnalyticsDay }) { return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Selected day</p><h2>{day.date}: {day.prompts.toLocaleString()} prompts, {day.output.words.toLocaleString()} output words</h2></div><span class="selected-date">{day.activeChats} chats</span></div><SortableTable rows={day.conversations} columns={dayColumns} initialSort={{ column: 'output', direction: 'descending' }} rowKey={chat => chat.id} /></section> }
+function Concentration({ conversations }: { conversations: readonly ConversationAnalytics[] }) { const ordered = conversations.slice().sort((a, b) => b.output.words - a.output.words); const ranked = ordered.slice(0, 12); const total = conversations.reduce((sum, chat) => sum + chat.output.words, 0); let cumulative = 0; return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Concentration</p><h2>Which chats account for output volume?</h2></div><span class="selected-date">Top 1 / 5 / 10: {share(ordered.slice(0, 1).reduce((sum, chat) => sum + chat.output.words, 0), total)} / {share(ordered.slice(0, 5).reduce((sum, chat) => sum + chat.output.words, 0), total)} / {share(ordered.slice(0, 10).reduce((sum, chat) => sum + chat.output.words, 0), total)}</span></div><ol class="concentration">{ranked.map(chat => { cumulative += chat.output.words; return <li><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a><div><i style={{ width: `${total ? chat.output.words / total * 100 : 0}%` }} /><span>{formatNumber(chat.output.words)} words · {share(cumulative, total)} cumulative</span></div></li> })}</ol></section> }
+function CalendarHeatmap({ days, metric }: { days: readonly AnalyticsDay[]; metric: DailyMetric }) { const max = Math.max(...days.map(day => metricValue(day, metric)), 1); return <section class="chart-card"><div class="chart-heading"><div><p class="eyebrow">Calendar rhythm</p><h2>Daily {metricLabel(metric).toLocaleLowerCase()} at a glance.</h2></div></div><div class="calendar-heatmap">{days.map(day => <span title={`${day.date}: ${metricValue(day, metric).toLocaleString()} ${metricLabel(metric).toLocaleLowerCase()}`} style={{ opacity: `${.12 + .88 * metricValue(day, metric) / max}` }} />)}</div><p class="chart-note">Each cell is one calendar day, including inactive days.</p></section> }
+function HourHeatmap({ cells, metric }: { cells: readonly { weekday: number; hour: number; prompts: number; input: TextMetrics; output: TextMetrics }[]; metric: 'prompts' | 'input' | 'output' }) { const value = (cell: typeof cells[number]) => metric === 'prompts' ? cell.prompts : cell[metric].words; const max = Math.max(...cells.map(value), 1); const label = metric === 'prompts' ? 'prompts' : `${metric} words`; return <section class="chart-card"><div class="chart-heading"><div><p class="eyebrow">Temporal rhythm</p><h2>When {label} happen.</h2></div></div><div class="hour-heatmap">{cells.map(cell => <span title={`${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][cell.weekday]} ${cell.hour}:00: ${value(cell)} ${label}`} style={{ opacity: `${.1 + .9 * value(cell) / max}` }} />)}</div><p class="chart-note">Rows run Sunday to Saturday; columns run 00:00 to 23:00 in the selected timezone.</p></section> }
+function SessionDistribution({ sessions }: { sessions: readonly SessionAnalytics[] }) { const bins: readonly (readonly [number, number])[] = [[1, 1], [2, 5], [6, 10], [11, 25], [26, 50], [51, 100], [101, Infinity]]; const counts = bins.map(([from, to]) => sessions.filter(session => session.prompts >= from && session.prompts <= to).length); return <MiniBars title="Session depth" labels={bins.map(([from, to]) => to === Infinity ? `${from}+` : from === to ? `${from}` : `${from}-${to}`)} values={counts} note="Prompts per observed session." /> }
+function SessionStarts({ sessions, utc }: { sessions: readonly SessionAnalytics[]; utc: boolean }) { const values = Array.from({ length: 24 }, (_, hour) => sessions.filter(session => utc ? new Date(session.startAt).getUTCHours() === hour : new Date(session.startAt).getHours() === hour).length); return <MiniBars title="Session starts" labels={values.map((_, hour) => String(hour).padStart(2, '0'))} values={values} note="Observed session starts by hour." /> }
+function SessionScatter({ sessions }: { sessions: readonly SessionAnalytics[] }) { const maxPrompts = Math.max(...sessions.map(session => session.prompts), 1); const maxSpan = Math.max(...sessions.map(session => session.spanMs), 1); return <section class="chart-card"><div class="chart-heading"><div><p class="eyebrow">Intensity</p><h2>Session depth and observed span.</h2></div></div><div class="scatter">{sessions.map(session => <a href={`#/conversations/${encodeURIComponent(session.conversations[0]?.id ?? '')}`} title={`${session.prompts} prompts over ${formatDuration(session.spanMs)}`} style={{ left: `${session.prompts / maxPrompts * 100}%`, bottom: `${session.spanMs / maxSpan * 100}%` }} />)}</div><p class="chart-note">Each point is a session. This is observed elapsed span, not time spent.</p></section> }
+function Continuation({ sessions }: { sessions: readonly SessionAnalytics[] }) { const points = Array.from({ length: 12 }, (_, index) => index + 1).map(prompts => { const reached = sessions.filter(session => session.prompts >= prompts).length; const continued = sessions.filter(session => session.prompts > prompts).length; return { prompts, rate: reached ? continued / reached : 0, reached } }).filter(point => point.reached >= 5); return <section class="chart-card"><div class="chart-heading"><div><p class="eyebrow">Continuation</p><h2>How often sessions continue.</h2></div></div><div class="continuation">{points.map(point => <div><span>{point.prompts}</span><i style={{ width: `${point.rate * 100}%` }} /><strong>{Math.round(point.rate * 100)}%</strong></div>)}</div><p class="chart-note">Among sessions reaching a prompt count, the share with at least one further prompt. Minimum sample: 5 sessions.</p></section> }
+function SessionCards({ sessions }: { sessions: readonly SessionAnalytics[] }) { return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Conversation sessions</p><h2>Structural breaks in this chat.</h2></div></div><div class="session-cards">{sessions.map(session => <article><strong>{formatDate(session.startAt)} · {session.prompts} prompts · {formatDuration(session.spanMs)}</strong><span>{session.preview || 'No user prompt preview'}</span></article>)}</div></section> }
+function SessionTable({ sessions }: { sessions: readonly SessionAnalytics[] }) { return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Outlier queue</p><h2>Sessions to inspect.</h2></div></div><SortableTable rows={sessions} columns={sessionColumns} initialSort={{ column: 'prompts', direction: 'descending' }} rowKey={session => session.id} /></section> }
+function TurnTimeline({ bins, total, onSelect }: { bins: readonly { startIndex: number; endIndex: number; input: TextMetrics; output: TextMetrics }[]; total: number; onSelect: (bin: { startIndex: number; endIndex: number }) => void }) { const max = Math.max(...bins.map(bin => Math.max(bin.input.words, bin.output.words)), 1); return <section class="chart-card"><div class="chart-heading"><div><p class="eyebrow">Turn volume</p><h2>{total.toLocaleString()} turns, compressed into {bins.length} inspectable bins.</h2></div></div><div class="turn-timeline">{bins.map(bin => <button title={`Turns ${bin.startIndex}-${bin.endIndex}: ${bin.input.words} input words, ${bin.output.words} output words`} onClick={() => onSelect(bin)}><i style={{ height: `${bin.input.words / max * 100}%` }} /><b style={{ height: `${bin.output.words / max * 100}%` }} /></button>)}</div><p class="chart-note">Orange is user input; teal is assistant output. Select a bin to jump the literal outline.</p></section> }
+function MiniBars({ title, labels, values, note }: { title: string; labels: string[]; values: number[]; note: string }) { const max = Math.max(...values, 1); return <section class="chart-card"><div class="chart-heading"><div><p class="eyebrow">Sessions</p><h2>{title}</h2></div></div><div class="mini-bars">{values.map((value, index) => <div><strong>{value}</strong><i style={{ height: `${value / max * 100}%` }} /><span>{labels[index]}</span></div>)}</div><p class="chart-note">{note}</p></section> }
+function Status({ title, detail, error = false }: { title: string; detail: string; error?: boolean }) { return <section class={error ? 'status-card error' : 'status-card'}><p class="eyebrow">{title}</p><strong>{detail}</strong><p>Files never leave this browser.</p></section> }
+function Metric({ label, value }: { label: string; value: number | string }) { return <div class="metric"><span>{label}</span><strong>{typeof value === 'number' ? formatNumber(value) : value}</strong></div> }
+function About() { return <section class="about-page"><div class="page-heading"><p class="eyebrow">About this dashboard</p><h2>Evidence about your usage, kept on your computer.</h2><p>Atlas measures message, text, timing, and session structure locally. It does not infer purpose, topic, wellbeing, or intent from your chats.</p></div><div class="about-grid"><section class="about-card"><p class="eyebrow">Use it</p><h3>Import an extracted export</h3><p><a href="https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data" target="_blank" rel="noreferrer">Request a ChatGPT data export from OpenAI</a>, extract it, then choose that folder here.</p></section><section class="about-card"><p class="eyebrow">Text metrics</p><h3>Volume is not tokens</h3><p>Input and output use literal message bodies. Words are Unicode word segments; characters are text characters. Custom instructions and hidden reasoning are not counted.</p></section><section class="about-card"><p class="eyebrow">Evidence</p><h3>No automatic interpretation</h3><p>The conversation view exposes structural sessions, literal previews, local search, and selected text on demand without uploading or classifying your conversations.</p></section></div></section> }
+function busiestDay(days: readonly AnalyticsDay[]): AnalyticsDay | undefined { return days.reduce<AnalyticsDay | undefined>((best, day) => !best || day.prompts > best.prompts ? day : best, undefined) }
 function localTimeZone(): string { return Intl.DateTimeFormat().resolvedOptions().timeZone }
-const conversationColumns: readonly SortableColumn<ConversationSummary>[] = [
+function selectedTimeZone(zone: TimeZoneMode): string { return zone === 'local' ? localTimeZone() : 'UTC' }
+function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/'); return page === 'patterns' ? { page: 'patterns' } : page === 'conversations' ? id ? { page: 'conversation', id: decodeURIComponent(id) } : { page: 'conversations' } : page === 'about' ? { page: 'about' } : { page: 'overview' } }
+function ratio(output: TextMetrics, input: TextMetrics): string { return input.words === 0 ? 'n/a' : `${(output.words / input.words).toFixed(1)}x` }
+function share(value: number, total: number): string { return total === 0 ? '0%' : `${Math.round(value / total * 100)}%` }
+function formatNumber(value: number): string { return value.toLocaleString() }
+function formatDate(value: string): string { return new Date(value).toLocaleString() }
+function formatDuration(value: number): string { const minutes = Math.round(value / 60_000); const hours = Math.floor(minutes / 60); return hours ? `${hours}h ${minutes % 60}m` : `${minutes}m` }
+function median(values: readonly number[]): number { if (!values.length) return 0; const sorted = [...values].sort((a, b) => a - b); const center = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[center]! : (sorted[center - 1]! + sorted[center]!) / 2 }
+const conversationColumns: readonly SortableColumn<ConversationAnalytics>[] = [
     { id: 'title', label: 'Conversation', align: 'left', compare: (a, b) => a.title.localeCompare(b.title), render: chat => <><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a><code>{chat.id}</code></> },
-    { id: 'messages', label: 'Messages by role', compare: (a, b) => a.messages - b.messages, render: chat => <>{chat.messages.toLocaleString()} total<code>{chat.roles.map(role => `${role.role} ${role.messages}`).join(' · ')}</code></> },
-    { id: 'first', label: 'First / last message', compare: (a, b) => compareOptionalDate(a.firstMessageAt, b.firstMessageAt), render: chat => <>{formatDate(chat.firstMessageAt)}<code>{formatDate(chat.lastMessageAt)}</code></> },
-    { id: 'lifetime', label: 'Lifetime', compare: (a, b) => compareOptionalNumber(a.lifetimeMs, b.lifetimeMs), render: chat => formatDuration(chat.lifetimeMs) },
-]
-function dayColumns(total: number): readonly SortableColumn<UsageDay['conversations'][number]>[] { return [
-    { id: 'title', label: 'Conversation', align: 'left', compare: (a, b) => a.title.localeCompare(b.title), render: chat => <><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a><code>{chat.id}</code></> },
-    { id: 'messages', label: 'Messages', compare: (a, b) => a.messages - b.messages, render: chat => chat.messages },
     { id: 'prompts', label: 'Prompts', compare: (a, b) => a.prompts - b.prompts, render: chat => chat.prompts },
-    { id: 'share', label: 'Share', compare: (a, b) => a.messages - b.messages, render: chat => `${Math.round(chat.messages / total * 100)}%` },
-] }
-function compareOptionalNumber(a?: number, b?: number): number { return (a ?? Number.NEGATIVE_INFINITY) - (b ?? Number.NEGATIVE_INFINITY) }
-function compareOptionalDate(a?: string, b?: string): number { return compareOptionalNumber(a ? Date.parse(a) : undefined, b ? Date.parse(b) : undefined) }
-function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/'); return page === 'conversations' ? id ? { page: 'conversation', id: decodeURIComponent(id) } : { page: 'conversations' } : page === 'about' ? { page: 'about' } : { page: 'overview' } }
-
+    { id: 'input', label: 'Input words', compare: (a, b) => a.input.words - b.input.words, render: chat => chat.input.words },
+    { id: 'output', label: 'Output words', compare: (a, b) => a.output.words - b.output.words, render: chat => chat.output.words },
+    { id: 'characters', label: 'Input / output characters', compare: (a, b) => (a.input.characters + a.output.characters) - (b.input.characters + b.output.characters), render: chat => `${formatNumber(chat.input.characters)} / ${formatNumber(chat.output.characters)}` },
+    { id: 'ratio', label: 'Output / input', compare: (a, b) => a.output.words / Math.max(a.input.words, 1) - b.output.words / Math.max(b.input.words, 1), render: chat => ratio(chat.output, chat.input) },
+    { id: 'sessions', label: 'Sessions', compare: (a, b) => a.sessions - b.sessions, render: chat => chat.sessions },
+    { id: 'days', label: 'Active days', compare: (a, b) => a.activeDays - b.activeDays, render: chat => chat.activeDays },
+    { id: 'lifetime', label: 'Lifetime', compare: (a, b) => (a.lifetimeMs ?? -1) - (b.lifetimeMs ?? -1), render: chat => chat.lifetimeMs === undefined ? 'No duration' : formatDuration(chat.lifetimeMs) },
+]
+const dayColumns: readonly SortableColumn<DayConversation>[] = [
+    { id: 'title', label: 'Conversation', align: 'left', compare: (a, b) => a.title.localeCompare(b.title), render: chat => <a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a> },
+    { id: 'prompts', label: 'Prompts', compare: (a, b) => a.prompts - b.prompts, render: chat => chat.prompts },
+    { id: 'input', label: 'Input words', compare: (a, b) => a.input.words - b.input.words, render: chat => chat.input.words },
+    { id: 'output', label: 'Output words', compare: (a, b) => a.output.words - b.output.words, render: chat => chat.output.words },
+]
+const sessionColumns: readonly SortableColumn<SessionAnalytics>[] = [
+    { id: 'start', label: 'Start', align: 'left', compare: (a, b) => Date.parse(a.startAt) - Date.parse(b.startAt), render: session => <>{formatDate(session.startAt)}<code>{session.preview || 'No prompt preview'}</code></> },
+    { id: 'prompts', label: 'Prompts', compare: (a, b) => a.prompts - b.prompts, render: session => session.prompts },
+    { id: 'input', label: 'Input words', compare: (a, b) => a.input.words - b.input.words, render: session => session.input.words },
+    { id: 'output', label: 'Output words', compare: (a, b) => a.output.words - b.output.words, render: session => session.output.words },
+    { id: 'span', label: 'Observed span', compare: (a, b) => a.spanMs - b.spanMs, render: session => formatDuration(session.spanMs) },
+]
 type WorkerMessage =
     | { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount: number; bytesRead: number; bytesTotal: number; chats: number }
-    | { type: 'complete'; requestId: number; local: UsageStatistics; utc: UsageStatistics; skipped: number; durationMs: number; startDate?: string }
-    | { type: 'statistics'; requestId: number; local: UsageStatistics; utc: UsageStatistics; startDate?: string }
-    | { type: 'conversation-detail'; requestId: number; id: string; summary: ConversationSummary; days: UsageDay[] }
-    | { type: 'failure'; requestId: number; operation: 'import' | 'statistics' | 'conversation-detail'; message: string }
+    | { type: 'complete'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
+    | { type: 'statistics'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; startDate?: string; sessionGapMinutes: number }
+    | { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }
+    | { type: 'conversation-outline'; requestId: number; id: string; page: TurnPage }
+    | { type: 'message-content'; requestId: number; id: string; contents: MessageContent[] }
+    | { type: 'failure'; requestId: number; operation: 'import' | 'statistics' | 'conversation-detail' | 'conversation-outline' | 'message-content'; message: string }

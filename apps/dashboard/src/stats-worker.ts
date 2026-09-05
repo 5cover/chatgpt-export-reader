@@ -1,76 +1,33 @@
 import { JSONParser } from '@streamparser/json'
-import { isEmptyV1Record, normalizeV1Chat, UsageStatsAccumulator, type Chat, type ConversationSummary, type UsageDay, type UsageStatistics } from '@chatgpt-export-reader/core'
+import {
+    collectAnalytics,
+    collectConversationDetail,
+    findConversationTurns,
+    getMessageContents,
+    isEmptyV1Record,
+    normalizeV1Chat,
+    type AnalyticsStatistics,
+    type Chat,
+    type ConversationDetail,
+    type MessageContent,
+    type TurnPage,
+} from '@chatgpt-export-reader/core'
 
-type ImportRequest = {
-    type: 'import'
-    requestId: number
-    files: File[]
-    localTimeZone: string
-    startDate?: string
-}
+type SharedOptions = { localTimeZone: string; startDate?: string; sessionGapMinutes: number }
+type ImportRequest = { type: 'import'; requestId: number; files: File[] } & SharedOptions
+type StatisticsRequest = { type: 'statistics'; requestId: number } & SharedOptions
+type DetailRequest = { type: 'conversation-detail'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number }
+type OutlineRequest = { type: 'conversation-outline'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; offset: number; limit: number; query?: string }
+type ContentRequest = { type: 'message-content'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; ids: string[] }
+type Request = ImportRequest | StatisticsRequest | DetailRequest | OutlineRequest | ContentRequest
 
-type StatisticsRequest = {
-    type: 'statistics'
-    requestId: number
-    localTimeZone: string
-    startDate?: string
-}
-
-type DetailRequest = {
-    type: 'conversation-detail'
-    requestId: number
-    id: string
-    timeZone: string
-    startDate?: string
-}
-
-type Request = ImportRequest | StatisticsRequest | DetailRequest
-
-type Progress = {
-    type: 'progress'
-    requestId: number
-    fileName: string
-    fileIndex: number
-    fileCount: number
-    bytesRead: number
-    bytesTotal: number
-    chats: number
-    skipped: number
-}
-
-type Complete = {
-    type: 'complete'
-    requestId: number
-    local: UsageStatistics
-    utc: UsageStatistics
-    chats: number
-    skipped: number
-    durationMs: number
-    startDate?: string
-}
-
-type Statistics = {
-    type: 'statistics'
-    requestId: number
-    local: UsageStatistics
-    utc: UsageStatistics
-    startDate?: string
-}
-
-type Detail = {
-    type: 'conversation-detail'
-    requestId: number
-    id: string
-    summary: ConversationSummary
-    days: UsageDay[]
-}
-
-type Failure = {
-    type: 'failure'
-    requestId: number
-    operation: Request['type']
-    message: string
-}
+type Progress = { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount: number; bytesRead: number; bytesTotal: number; chats: number; skipped: number }
+type Complete = { type: 'complete'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; chats: number; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
+type Statistics = { type: 'statistics'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; startDate?: string; sessionGapMinutes: number }
+type Detail = { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }
+type Outline = { type: 'conversation-outline'; requestId: number; id: string; page: TurnPage }
+type Content = { type: 'message-content'; requestId: number; id: string; contents: MessageContent[] }
+type Failure = { type: 'failure'; requestId: number; operation: Request['type']; message: string }
 
 const worker = globalThis
 const retainedChats: Chat[] = []
@@ -78,29 +35,20 @@ const retainedChatsById = new Map<string, Chat[]>()
 
 worker.addEventListener('message', (event: MessageEvent<Request>) => {
     const request = event.data
-    const operation = request.type === 'import'
-        ? importFiles(request)
-        : request.type === 'statistics'
-            ? recalculateStatistics(request)
-            : loadConversationDetail(request)
-    void operation.catch(error => {
-        worker.postMessage({
-            type: 'failure',
-            requestId: request.requestId,
-            operation: request.type,
-            message: error instanceof Error ? error.message : String(error),
-        } satisfies Failure)
-    })
+    const operation = request.type === 'import' ? importFiles(request)
+        : request.type === 'statistics' ? recalculateStatistics(request)
+            : request.type === 'conversation-detail' ? loadConversationDetail(request)
+                : request.type === 'conversation-outline' ? loadConversationOutline(request)
+                    : loadMessageContents(request)
+    void operation.catch(error => worker.postMessage({
+        type: 'failure', requestId: request.requestId, operation: request.type,
+        message: error instanceof Error ? error.message : String(error),
+    } satisfies Failure))
 })
 
 async function importFiles(request: ImportRequest): Promise<void> {
-    const files = request.files
-        .filter(file => /^conversations(?:-[^/]+)?\.json$/i.test(file.name))
-        .sort((a, b) => relativeName(a).localeCompare(relativeName(b)))
+    const files = request.files.filter(file => /^conversations(?:-[^/]+)?\.json$/i.test(file.name)).sort((a, b) => relativeName(a).localeCompare(relativeName(b)))
     if (files.length === 0) throw new Error('No conversations*.json files were found in the selected folder.')
-
-    const local = new UsageStatsAccumulator({ timeZone: request.localTimeZone, startDate: request.startDate })
-    const utc = new UsageStatsAccumulator({ timeZone: 'UTC', startDate: request.startDate })
     let chats = 0
     let skipped = 0
     let lastProgressAt = 0
@@ -116,17 +64,12 @@ async function importFiles(request: ImportRequest): Promise<void> {
             try {
                 const chat = normalizeV1Chat(value)
                 retainedChats.push(chat)
-                const chatsWithId = retainedChatsById.get(chat.id) ?? []
-                chatsWithId.push(chat)
-                retainedChatsById.set(chat.id, chatsWithId)
-                local.addChat(chat)
-                utc.addChat(chat)
+                const records = retainedChatsById.get(chat.id) ?? []
+                records.push(chat)
+                retainedChatsById.set(chat.id, records)
                 chats++
-            } catch {
-                skipped++
-            }
+            } catch { skipped++ }
         }
-
         let bytesRead = 0
         try {
             const reader = file.stream().getReader()
@@ -135,88 +78,49 @@ async function importFiles(request: ImportRequest): Promise<void> {
                 if (chunk.done) break
                 parser.write(chunk.value)
                 bytesRead += chunk.value.byteLength
-                const now = performance.now()
-                if (now - lastProgressAt >= 250) {
-                    lastProgressAt = now
-                    worker.postMessage({
-                        type: 'progress',
-                        requestId: request.requestId,
-                        fileName: relativeName(file),
-                        fileIndex: fileIndex + 1,
-                        fileCount: files.length,
-                        bytesRead,
-                        bytesTotal: file.size,
-                        chats,
-                        skipped,
-                    } satisfies Progress)
+                if (performance.now() - lastProgressAt >= 250) {
+                    lastProgressAt = performance.now()
+                    worker.postMessage({ type: 'progress', requestId: request.requestId, fileName: relativeName(file), fileIndex: fileIndex + 1, fileCount: files.length, bytesRead, bytesTotal: file.size, chats, skipped } satisfies Progress)
                 }
             }
-
-            // The parser closes itself after a complete top-level array. Calling end twice reports a false malformed-export error.
             if (!parser.isEnded) parser.end()
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
-            throw new Error(
-                `Failed to parse ${relativeName(file)} after ${formatBytes(bytesRead)} of ${formatBytes(file.size)}: ${message}`,
-            )
+            throw new Error(`Failed to parse ${relativeName(file)} after ${formatBytes(bytesRead)} of ${formatBytes(file.size)}: ${message}`)
         }
     }
 
-    worker.postMessage({
-        type: 'complete',
-        requestId: request.requestId,
-        local: local.finish(),
-        utc: utc.finish(),
-        chats,
-        skipped,
-        durationMs: Math.round(performance.now() - startedAt),
-        startDate: request.startDate,
-    } satisfies Complete)
+    const statistics = statisticsFor(request)
+    worker.postMessage({ type: 'complete', requestId: request.requestId, ...statistics, chats, skipped, durationMs: Math.round(performance.now() - startedAt), startDate: request.startDate, sessionGapMinutes: request.sessionGapMinutes } satisfies Complete)
 }
 
 async function recalculateStatistics(request: StatisticsRequest): Promise<void> {
-    const { local, utc } = statisticsFor(request.localTimeZone, request.startDate)
-    worker.postMessage({
-        type: 'statistics',
-        requestId: request.requestId,
-        local,
-        utc,
-        startDate: request.startDate,
-    } satisfies Statistics)
+    worker.postMessage({ type: 'statistics', requestId: request.requestId, ...statisticsFor(request), startDate: request.startDate, sessionGapMinutes: request.sessionGapMinutes } satisfies Statistics)
 }
 
 async function loadConversationDetail(request: DetailRequest): Promise<void> {
-    const chats = retainedChatsById.get(request.id)
-    if (chats === undefined) throw new Error(`Conversation no longer exists in this browser session: ${request.id}`)
-
-    const accumulator = new UsageStatsAccumulator({ timeZone: request.timeZone, startDate: request.startDate })
-    for (const chat of chats) accumulator.addChat(chat)
-    const statistics = accumulator.finish()
-    const summary = statistics.conversations.find(chat => chat.id === request.id)
-    if (summary === undefined) throw new Error(`Conversation has no messages in the selected date range: ${request.id}`)
-    worker.postMessage({
-        type: 'conversation-detail',
-        requestId: request.requestId,
-        id: request.id,
-        summary,
-        days: statistics.days,
-    } satisfies Detail)
+    const chats = chatsFor(request.id)
+    const detail = collectConversationDetail(chats, analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes))
+    worker.postMessage({ type: 'conversation-detail', requestId: request.requestId, id: request.id, detail } satisfies Detail)
 }
 
-function statisticsFor(localTimeZone: string, startDate?: string): { local: UsageStatistics; utc: UsageStatistics } {
-    const local = new UsageStatsAccumulator({ timeZone: localTimeZone, startDate })
-    const utc = new UsageStatsAccumulator({ timeZone: 'UTC', startDate })
-    for (const chat of retainedChats) {
-        local.addChat(chat)
-        utc.addChat(chat)
+async function loadConversationOutline(request: OutlineRequest): Promise<void> {
+    const page = findConversationTurns(chatsFor(request.id), analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes), request.offset, request.limit, request.query)
+    worker.postMessage({ type: 'conversation-outline', requestId: request.requestId, id: request.id, page } satisfies Outline)
+}
+
+async function loadMessageContents(request: ContentRequest): Promise<void> {
+    const contents = getMessageContents(chatsFor(request.id), analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes), request.ids)
+    worker.postMessage({ type: 'message-content', requestId: request.requestId, id: request.id, contents } satisfies Content)
+}
+
+function statisticsFor(request: SharedOptions): { local: AnalyticsStatistics; utc: AnalyticsStatistics } {
+    return {
+        local: collectAnalytics(retainedChats, analyticsOptions(request.localTimeZone, request.startDate, request.sessionGapMinutes)),
+        utc: collectAnalytics(retainedChats, analyticsOptions('UTC', request.startDate, request.sessionGapMinutes)),
     }
-    return { local: local.finish(), utc: utc.finish() }
 }
-
-function relativeName(file: File): string {
-    return file.webkitRelativePath || file.name
-}
-
-function formatBytes(bytes: number): string {
-    return new Intl.NumberFormat('en', { style: 'unit', unit: 'byte', unitDisplay: 'short' }).format(bytes)
-}
+function analyticsOptions(timeZone: string, startDate: string | undefined, sessionGapMinutes: number) { return { timeZone, startDate, sessionGapMinutes } }
+function chatsFor(id: string): Chat[] { const chats = retainedChatsById.get(id); if (chats === undefined) throw new Error(`Conversation no longer exists in this browser session: ${id}`); return chats }
+function relativeName(file: File): string { return file.webkitRelativePath || file.name }
+function formatBytes(bytes: number): string { return new Intl.NumberFormat('en', { style: 'unit', unit: 'byte', unitDisplay: 'short' }).format(bytes) }

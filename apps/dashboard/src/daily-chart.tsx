@@ -1,18 +1,20 @@
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { useEffect, useRef } from 'preact/hooks'
-import type { UsageDay } from '@chatgpt-export-reader/core'
+import type { AnalyticsDay } from '@chatgpt-export-reader/core'
 
 export type DailyChartProps = {
-    days: readonly UsageDay[]
+    days: readonly AnalyticsDay[]
     selectedDate?: string
     onSelectDate: (date: string) => void
+    metric: DailyMetric
     title?: string
     note?: string
-    showPromptSummary?: boolean
 }
 
-export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages reveal the spikes.', note = 'Teal bars show all messages; orange bars show user prompts. Click a day to inspect its conversations. Drag to zoom; double-click to reset.', showPromptSummary = false }: DailyChartProps) {
+export type DailyMetric = 'prompts' | 'messages' | 'inputWords' | 'outputWords' | 'totalWords'
+
+export function DailyChart({ days, selectedDate, onSelectDate, metric, title = 'How usage changes over time.', note = 'Click a day to inspect the conversations behind it. Drag to zoom; double-click to reset.' }: DailyChartProps) {
     const target = useRef<HTMLDivElement>(null)
     const onSelectDateRef = useRef(onSelectDate)
     onSelectDateRef.current = onSelectDate
@@ -33,16 +35,16 @@ export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages
                 series: [
                     {},
                     {
-                        label: 'All messages',
+                        label: metricLabel(metric),
                         stroke: '#0b7773',
                         fill: 'rgba(11, 119, 115, 0.60)',
                         paths: uPlot.paths.bars!({ size: [0.82], gap: 1, radius: 0.2 }),
                     },
                     {
-                        label: 'User prompts',
+                        label: '28-day mean',
                         stroke: '#d36c37',
-                        fill: 'rgba(211, 108, 55, 0.86)',
-                        paths: uPlot.paths.bars!({ size: [0.52], gap: 1, radius: 0.2 }),
+                        width: 2,
+                        points: { show: false },
                     },
                 ],
                 hooks: {
@@ -56,7 +58,7 @@ export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages
                     }],
                 },
             },
-            [timestamps, days.map(day => day.messages), days.map(day => day.prompts)],
+            [timestamps, days.map(day => metricValue(day, metric)), rollingMean(days.map(day => metricValue(day, metric)), 28)],
             target.current,
         )
 
@@ -74,9 +76,30 @@ export function DailyChart({ days, selectedDate, onSelectDate, title = 'Messages
             </div>
             <div class="chart" ref={target} />
             <p class="chart-note">{note}</p>
-            {showPromptSummary && <p class="chart-summary">User prompts per calendar day: <strong>mean {mean(days.map(day => day.prompts)).toFixed(1)}</strong> · <strong>median {median(days.map(day => day.prompts)).toFixed(1)}</strong></p>}
+            <p class="chart-summary">Per calendar day: <strong>mean {mean(days.map(day => metricValue(day, metric))).toFixed(1)}</strong> · <strong>median {median(days.map(day => metricValue(day, metric))).toFixed(1)}</strong></p>
         </section>
     )
+}
+
+function rollingMean(values: readonly number[], width: number): number[] {
+    let total = 0
+    return values.map((value, index) => {
+        total += value
+        if (index >= width) total -= values[index - width]!
+        return total / Math.min(index + 1, width)
+    })
+}
+
+export function metricValue(day: AnalyticsDay, metric: DailyMetric): number {
+    if (metric === 'prompts') return day.prompts
+    if (metric === 'messages') return day.messages
+    if (metric === 'inputWords') return day.input.words
+    if (metric === 'outputWords') return day.output.words
+    return day.input.words + day.output.words
+}
+
+export function metricLabel(metric: DailyMetric): string {
+    return ({ prompts: 'User prompts', messages: 'Messages', inputWords: 'Input words', outputWords: 'Output words', totalWords: 'Total words' })[metric]
 }
 
 function mean(values: readonly number[]): number {

@@ -1,6 +1,26 @@
 export type { Chat, Message, Thought } from './types.js'
 export { extractV1UsageConversation, isEmptyV1Record, normalizeV1Chat } from './v1.js'
 export {
+    collectAnalytics,
+    collectConversationDetail,
+    findConversationTurns,
+    getMessageContents,
+    type AnalyticsDay,
+    type AnalyticsOptions,
+    type AnalyticsStatistics,
+    type AnalyticsSummary,
+    type ConversationAnalytics,
+    type ConversationDetail,
+    type DayConversation,
+    type MessageContent,
+    type SessionAnalytics,
+    type TemporalCell,
+    type TextMetrics,
+    type TurnBin,
+    type TurnOutline,
+    type TurnPage,
+} from './analytics.js'
+export {
     collectUsageStatistics,
     UsageStatsAccumulator,
     type UsageConversation,

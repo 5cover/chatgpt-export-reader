@@ -31,7 +31,7 @@ pnpm build:dashboard
 pnpm --filter @chatgpt-export-reader/dashboard preview
 ```
 
-It provides a zoomable daily messages/prompts chart, a browser-local or UTC day grouping toggle, and a ranked list of conversations contributing to any selected day. The static dashboard deploys to GitHub Pages on pushes to `main`.
+It provides local text-volume analytics, daily and temporal-rhythm views, configurable observed sessions, concentration rankings, and a paginated conversation evidence explorer with literal search and on-demand message text. The static dashboard deploys to GitHub Pages on pushes to `main`.
 
 ## Step 3
 
