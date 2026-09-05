@@ -14,7 +14,8 @@ type Route = { page: 'about' } | { page: 'overview' } | { page: 'patterns' } | {
 type DetailState = { kind: 'ready'; detail: ConversationDetail } | { kind: 'missing' } | { kind: 'error'; message: string }
 
 export function App() {
-    const input = useRef<HTMLInputElement>(null)
+    const folderInput = useRef<HTMLInputElement>(null)
+    const archiveInput = useRef<HTMLInputElement>(null)
     const worker = useRef<Worker>()
     const nextRequest = useRef(0)
     const activeImport = useRef<number>()
@@ -44,7 +45,7 @@ export function App() {
     const visibleRoute: Route = stats ? route : { page: 'about' }
 
     useEffect(() => {
-        input.current?.setAttribute('webkitdirectory', '')
+        folderInput.current?.setAttribute('webkitdirectory', '')
         const nextWorker = new Worker(new URL('./stats-worker.ts', import.meta.url), { type: 'module' })
         worker.current = nextWorker
         nextWorker.addEventListener('message', event => receive(event.data as WorkerMessage))
@@ -69,7 +70,9 @@ export function App() {
         if (message.type === 'progress') {
             if (message.requestId !== activeImport.current) return
             const percent = message.bytesTotal ? Math.round(message.bytesRead / message.bytesTotal * 100) : 0
-            setState({ kind: 'loading', detail: `${message.fileName} (${message.fileIndex}/${message.fileCount}, ${percent}%) - ${message.chats} chats` })
+            const position = message.fileCount === undefined ? '' : ` (${message.fileIndex}/${message.fileCount}`
+            const progress = message.bytesTotal === undefined ? '' : `${position ? ', ' : ' ('}${percent}%)`
+            setState({ kind: 'loading', detail: `${message.archiveName ? `${message.archiveName}: ` : ''}${message.fileName}${position}${progress} - ${message.chats} chats` })
         } else if (message.type === 'complete') {
             if (message.requestId !== activeImport.current) return
             activeImport.current = undefined
@@ -130,11 +133,23 @@ export function App() {
         const files = [...picker.files ?? []]
         picker.value = ''
         if (files.length === 0) return
+        beginImport({ kind: 'folder', files })
+    }
+
+    function chooseArchive(event: Event) {
+        const picker = event.currentTarget as HTMLInputElement
+        const archive = picker.files?.[0]
+        picker.value = ''
+        if (!archive) return
+        beginImport({ kind: 'zip', archive })
+    }
+
+    function beginImport(source: { kind: 'folder'; files: File[] } | { kind: 'zip'; archive: File }) {
         const requestId = ++nextRequest.current
         activeImport.current = requestId
         activeStatistics.current = undefined
-        setState({ kind: 'loading', detail: 'Preparing local analytics...' })
-        worker.current?.postMessage({ type: 'import', requestId, files, localTimeZone: localTimeZone(), startDate, sessionGapMinutes })
+        setState({ kind: 'loading', detail: source.kind === 'zip' ? `Preparing ${source.archive.name} locally...` : 'Preparing local analytics...' })
+        worker.current?.postMessage({ type: 'import', requestId, source, localTimeZone: localTimeZone(), startDate, sessionGapMinutes })
     }
 
     function applyOptions(nextStartDate = startDate, nextGap = sessionGapMinutes) {
@@ -163,7 +178,7 @@ export function App() {
     }
 
     return <main>
-        <header class="masthead"><div><p class="eyebrow">Private local analytics</p><h1>ChatGPT Usage Atlas</h1><p class="subtitle">Measure the scale, rhythm, and intensity of your own usage.</p></div><button class="import-button" type="button" disabled={state.kind === 'loading'} onClick={() => input.current?.click()}>{state.kind === 'loading' ? 'Importing...' : 'Choose export folder'}</button><input class="import-input" ref={input} type="file" multiple onChange={chooseFolder} /></header>
+        <header class="masthead"><div><p class="eyebrow">Private local analytics</p><h1>ChatGPT Usage Atlas</h1><p class="subtitle">Measure the scale, rhythm, and intensity of your own usage.</p></div><div class="import-actions"><button class="import-button" type="button" disabled={state.kind === 'loading'} onClick={() => folderInput.current?.click()}>Choose export folder</button><button class="import-button archive-button" type="button" disabled={state.kind === 'loading'} onClick={() => archiveInput.current?.click()}>Choose export ZIP</button></div><input class="import-input" ref={folderInput} type="file" multiple onChange={chooseFolder} /><input class="import-input" ref={archiveInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={chooseArchive} /></header>
         <Nav route={visibleRoute} hasExport={Boolean(stats)} />
         {!stats && <About />}
         {state.kind === 'loading' && <Status title="Importing locally" detail={state.detail} />}
@@ -199,7 +214,7 @@ function TurnTimeline({ bins, total, onSelect }: { bins: readonly { startIndex: 
 function MiniBars({ title, labels, values, note }: { title: string; labels: string[]; values: number[]; note: string }) { const max = Math.max(...values, 1); return <section class="chart-card"><div class="chart-heading"><div><p class="eyebrow">Sessions</p><h2>{title}</h2></div></div><div class="mini-bars">{values.map((value, index) => <div><strong>{value}</strong><i style={{ height: `${value / max * 100}%` }} /><span>{labels[index]}</span></div>)}</div><p class="chart-note">{note}</p></section> }
 function Status({ title, detail, error = false }: { title: string; detail: string; error?: boolean }) { return <section class={error ? 'status-card error' : 'status-card'}><p class="eyebrow">{title}</p><strong>{detail}</strong><p>Files never leave this browser.</p></section> }
 function Metric({ label, value }: { label: string; value: number | string }) { return <div class="metric"><span>{label}</span><strong>{typeof value === 'number' ? formatNumber(value) : value}</strong></div> }
-function About() { return <section class="about-page"><div class="page-heading"><p class="eyebrow">About this dashboard</p><h2>Evidence about your usage, kept on your computer.</h2><p>Atlas measures message, text, timing, and session structure locally. It does not infer purpose, topic, wellbeing, or intent from your chats.</p></div><div class="about-grid"><section class="about-card"><p class="eyebrow">Use it</p><h3>Import an extracted export</h3><p><a href="https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data" target="_blank" rel="noreferrer">Request a ChatGPT data export from OpenAI</a>, extract it, then choose that folder here.</p></section><section class="about-card"><p class="eyebrow">Text metrics</p><h3>Volume is not tokens</h3><p>Input and output use literal message bodies. Words are Unicode word segments; characters are text characters. Custom instructions and hidden reasoning are not counted.</p></section><section class="about-card"><p class="eyebrow">Evidence</p><h3>No automatic interpretation</h3><p>The conversation view exposes structural sessions, literal previews, local search, and selected text on demand without uploading or classifying your conversations.</p></section></div></section> }
+function About() { return <section class="about-page"><div class="page-heading"><p class="eyebrow">About this dashboard</p><h2>Evidence about your usage, kept on your computer.</h2><p>Atlas measures message, text, timing, and session structure locally. It does not infer purpose, topic, wellbeing, or intent from your chats.</p></div><div class="about-grid"><section class="about-card"><p class="eyebrow">Use it</p><h3>Import an export</h3><p><a href="https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data" target="_blank" rel="noreferrer">Request a ChatGPT data export from OpenAI</a>, then choose its downloaded ZIP directly or extract it and choose the folder.</p></section><section class="about-card"><p class="eyebrow">Text metrics</p><h3>Volume is not tokens</h3><p>Input and output use literal message bodies. Words are Unicode word segments; characters are text characters. Custom instructions and hidden reasoning are not counted.</p></section><section class="about-card"><p class="eyebrow">Evidence</p><h3>No automatic interpretation</h3><p>The browser reads matching conversation files in a local worker. It never uploads or stores your conversations.</p></section></div></section> }
 function busiestDay(days: readonly AnalyticsDay[]): AnalyticsDay | undefined { return days.reduce<AnalyticsDay | undefined>((best, day) => !best || day.prompts > best.prompts ? day : best, undefined) }
 function localTimeZone(): string { return Intl.DateTimeFormat().resolvedOptions().timeZone }
 function selectedTimeZone(zone: TimeZoneMode): string { return zone === 'local' ? localTimeZone() : 'UTC' }
@@ -235,7 +250,7 @@ const sessionColumns: readonly SortableColumn<SessionAnalytics>[] = [
     { id: 'span', label: 'Observed span', compare: (a, b) => a.spanMs - b.spanMs, render: session => formatDuration(session.spanMs) },
 ]
 type WorkerMessage =
-    | { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount: number; bytesRead: number; bytesTotal: number; chats: number }
+    | { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount?: number; bytesRead: number; bytesTotal?: number; chats: number; archiveName?: string }
     | { type: 'complete'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
     | { type: 'statistics'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; startDate?: string; sessionGapMinutes: number }
     | { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }

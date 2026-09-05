@@ -1,4 +1,5 @@
 import { JSONParser } from '@streamparser/json'
+import { Unzip, UnzipInflate } from 'fflate'
 import {
     collectAnalytics,
     collectConversationDetail,
@@ -14,14 +15,15 @@ import {
 } from '@chatgpt-export-reader/core'
 
 type SharedOptions = { localTimeZone: string; startDate?: string; sessionGapMinutes: number }
-type ImportRequest = { type: 'import'; requestId: number; files: File[] } & SharedOptions
+type ImportSource = { kind: 'folder'; files: File[] } | { kind: 'zip'; archive: File }
+type ImportRequest = { type: 'import'; requestId: number; source: ImportSource } & SharedOptions
 type StatisticsRequest = { type: 'statistics'; requestId: number } & SharedOptions
 type DetailRequest = { type: 'conversation-detail'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number }
 type OutlineRequest = { type: 'conversation-outline'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; offset: number; limit: number; query?: string }
 type ContentRequest = { type: 'message-content'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; ids: string[] }
 type Request = ImportRequest | StatisticsRequest | DetailRequest | OutlineRequest | ContentRequest
 
-type Progress = { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount: number; bytesRead: number; bytesTotal: number; chats: number; skipped: number }
+type Progress = { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount?: number; bytesRead: number; bytesTotal?: number; chats: number; skipped: number; archiveName?: string }
 type Complete = { type: 'complete'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; chats: number; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
 type Statistics = { type: 'statistics'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; startDate?: string; sessionGapMinutes: number }
 type Detail = { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }
@@ -32,10 +34,11 @@ type Failure = { type: 'failure'; requestId: number; operation: Request['type'];
 const worker = globalThis
 const retainedChats: Chat[] = []
 const retainedChatsById = new Map<string, Chat[]>()
+const MAX_ARCHIVE_EXTRACTED_BYTES = 1_000_000_000
 
 worker.addEventListener('message', (event: MessageEvent<Request>) => {
     const request = event.data
-    const operation = request.type === 'import' ? importFiles(request)
+    const operation = request.type === 'import' ? importExport(request)
         : request.type === 'statistics' ? recalculateStatistics(request)
             : request.type === 'conversation-detail' ? loadConversationDetail(request)
                 : request.type === 'conversation-outline' ? loadConversationOutline(request)
@@ -46,52 +49,129 @@ worker.addEventListener('message', (event: MessageEvent<Request>) => {
     } satisfies Failure))
 })
 
-async function importFiles(request: ImportRequest): Promise<void> {
-    const files = request.files.filter(file => /^conversations(?:-[^/]+)?\.json$/i.test(file.name)).sort((a, b) => relativeName(a).localeCompare(relativeName(b)))
-    if (files.length === 0) throw new Error('No conversations*.json files were found in the selected folder.')
-    let chats = 0
-    let skipped = 0
-    let lastProgressAt = 0
+async function importExport(request: ImportRequest): Promise<void> {
+    const state = { chats: 0, skipped: 0, lastProgressAt: 0 }
     const startedAt = performance.now()
     retainedChats.length = 0
     retainedChatsById.clear()
 
+    if (request.source.kind === 'folder') await importFolder(request, request.source.files, state)
+    else await importZip(request, request.source.archive, state)
+
+    const statistics = statisticsFor(request)
+    worker.postMessage({ type: 'complete', requestId: request.requestId, ...statistics, chats: state.chats, skipped: state.skipped, durationMs: Math.round(performance.now() - startedAt), startDate: request.startDate, sessionGapMinutes: request.sessionGapMinutes } satisfies Complete)
+}
+
+async function importFolder(request: ImportRequest, folderFiles: File[], state: ImportState): Promise<void> {
+    const files = folderFiles.filter(file => isConversationFile(file.name)).sort((a, b) => relativeName(a).localeCompare(relativeName(b)))
+    if (files.length === 0) throw new Error('No conversations*.json files were found in the selected folder.')
+
     for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
         const file = files[fileIndex]!
-        const parser = new JSONParser({ paths: ['$.*'], keepStack: false })
-        parser.onValue = ({ value }) => {
-            if (isEmptyV1Record(value)) return
-            try {
-                const chat = normalizeV1Chat(value)
-                retainedChats.push(chat)
-                const records = retainedChatsById.get(chat.id) ?? []
-                records.push(chat)
-                retainedChatsById.set(chat.id, records)
-                chats++
-            } catch { skipped++ }
-        }
-        let bytesRead = 0
+        const parser = createConversationParser(relativeName(file), file.size, request, state, { fileIndex: fileIndex + 1, fileCount: files.length })
         try {
             const reader = file.stream().getReader()
             while (true) {
                 const chunk = await reader.read()
                 if (chunk.done) break
                 parser.write(chunk.value)
-                bytesRead += chunk.value.byteLength
-                if (performance.now() - lastProgressAt >= 250) {
-                    lastProgressAt = performance.now()
-                    worker.postMessage({ type: 'progress', requestId: request.requestId, fileName: relativeName(file), fileIndex: fileIndex + 1, fileCount: files.length, bytesRead, bytesTotal: file.size, chats, skipped } satisfies Progress)
-                }
             }
-            if (!parser.isEnded) parser.end()
+            parser.end()
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
-            throw new Error(`Failed to parse ${relativeName(file)} after ${formatBytes(bytesRead)} of ${formatBytes(file.size)}: ${message}`)
+            throw new Error(`Failed to parse ${relativeName(file)} after ${formatBytes(parser.bytesRead)} of ${formatBytes(file.size)}: ${message}`)
         }
     }
+}
 
-    const statistics = statisticsFor(request)
-    worker.postMessage({ type: 'complete', requestId: request.requestId, ...statistics, chats, skipped, durationMs: Math.round(performance.now() - startedAt), startDate: request.startDate, sessionGapMinutes: request.sessionGapMinutes } satisfies Complete)
+async function importZip(request: ImportRequest, archive: File, state: ImportState): Promise<void> {
+    let entries = 0
+    let extractedBytes = 0
+    let failure: Error | undefined
+    const unzipper = new Unzip(file => {
+        if (!isConversationFile(file.name)) return
+        entries++
+        if (file.originalSize !== undefined && file.originalSize > MAX_ARCHIVE_EXTRACTED_BYTES) {
+            failure = new Error(`Archive entry ${file.name} expands beyond the ${formatBytes(MAX_ARCHIVE_EXTRACTED_BYTES)} safety limit.`)
+            return
+        }
+        const parser = createConversationParser(file.name, file.originalSize, request, state, { fileIndex: entries, archiveName: archive.name })
+        file.ondata = (error, chunk, final) => {
+            if (failure) return
+            if (error) {
+                failure = new Error(`Failed to extract ${file.name}: ${error.message}`)
+                return
+            }
+            try {
+                extractedBytes += chunk.byteLength
+                if (extractedBytes > MAX_ARCHIVE_EXTRACTED_BYTES) {
+                    failure = new Error(`Archive contents expand beyond the ${formatBytes(MAX_ARCHIVE_EXTRACTED_BYTES)} safety limit.`)
+                    return
+                }
+                parser.write(chunk)
+                if (final) parser.end()
+            } catch (cause) {
+                const message = cause instanceof Error ? cause.message : String(cause)
+                failure = new Error(`Failed to parse ${file.name} after ${formatBytes(parser.bytesRead)}${file.originalSize === undefined ? '' : ` of ${formatBytes(file.originalSize)}`}: ${message}`)
+            }
+        }
+        try { file.start() } catch (cause) {
+            const message = cause instanceof Error ? cause.message : String(cause)
+            failure = new Error(`Cannot extract ${file.name} from ${archive.name}: ${message}`)
+        }
+    })
+    unzipper.register(UnzipInflate)
+
+    let archiveBytesRead = 0
+    try {
+        const reader = archive.stream().getReader()
+        while (true) {
+            const chunk = await reader.read()
+            if (chunk.done) {
+                unzipper.push(new Uint8Array(), true)
+                break
+            }
+            archiveBytesRead += chunk.value.byteLength
+            unzipper.push(chunk.value)
+            if (failure) break
+        }
+    } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        throw new Error(`Failed to read ZIP archive ${archive.name} after ${formatBytes(archiveBytesRead)} of ${formatBytes(archive.size)}: ${message}`)
+    }
+    if (failure) throw failure
+    if (entries === 0) throw new Error(`No conversations*.json files were found in ZIP archive ${archive.name}.`)
+}
+
+type ImportState = { chats: number; skipped: number; lastProgressAt: number }
+type ProgressFile = { fileIndex: number; fileCount?: number; archiveName?: string }
+
+function createConversationParser(name: string, bytesTotal: number | undefined, request: ImportRequest, state: ImportState, progressFile: ProgressFile) {
+    const parser = new JSONParser({ paths: ['$.*'], keepStack: false })
+    let bytesRead = 0
+    parser.onValue = ({ value }) => {
+        if (isEmptyV1Record(value)) return
+        try {
+            const chat = normalizeV1Chat(value)
+            retainedChats.push(chat)
+            const records = retainedChatsById.get(chat.id) ?? []
+            records.push(chat)
+            retainedChatsById.set(chat.id, records)
+            state.chats++
+        } catch { state.skipped++ }
+    }
+    return {
+        get bytesRead() { return bytesRead },
+        write(chunk: Uint8Array) {
+            parser.write(chunk)
+            bytesRead += chunk.byteLength
+            if (performance.now() - state.lastProgressAt >= 250) {
+                state.lastProgressAt = performance.now()
+                worker.postMessage({ type: 'progress', requestId: request.requestId, fileName: name, bytesRead, bytesTotal, chats: state.chats, skipped: state.skipped, ...progressFile } satisfies Progress)
+            }
+        },
+        end() { if (!parser.isEnded) parser.end() },
+    }
 }
 
 async function recalculateStatistics(request: StatisticsRequest): Promise<void> {
@@ -123,4 +203,5 @@ function statisticsFor(request: SharedOptions): { local: AnalyticsStatistics; ut
 function analyticsOptions(timeZone: string, startDate: string | undefined, sessionGapMinutes: number) { return { timeZone, startDate, sessionGapMinutes } }
 function chatsFor(id: string): Chat[] { const chats = retainedChatsById.get(id); if (chats === undefined) throw new Error(`Conversation no longer exists in this browser session: ${id}`); return chats }
 function relativeName(file: File): string { return file.webkitRelativePath || file.name }
+function isConversationFile(name: string): boolean { return /^conversations(?:-[^/]+)?\.json$/i.test(name.slice(name.lastIndexOf('/') + 1)) }
 function formatBytes(bytes: number): string { return new Intl.NumberFormat('en', { style: 'unit', unit: 'byte', unitDisplay: 'short' }).format(bytes) }
