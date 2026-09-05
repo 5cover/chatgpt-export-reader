@@ -10,7 +10,7 @@ type ImportState =
     | { kind: 'ready'; local: AnalyticsStatistics; utc: AnalyticsStatistics; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
     | { kind: 'error'; message: string }
 type TimeZoneMode = 'local' | 'utc'
-type Route = { page: 'about' } | { page: 'overview' } | { page: 'patterns' } | { page: 'language' } | { page: 'conversations' } | { page: 'conversation'; id: string }
+type Route = { page: 'about' } | { page: 'overview' } | { page: 'patterns' } | { page: 'conversations' } | { page: 'conversation'; id: string }
 type DetailState = { kind: 'ready'; detail: ConversationDetail } | { kind: 'missing' } | { kind: 'error'; message: string }
 type RepetitionState = { kind: 'loading' } | { kind: 'ready'; analysis: RepeatedPhraseAnalysis } | { kind: 'error'; message: string }
 
@@ -24,7 +24,6 @@ export function App() {
     const activeDetail = useRef<number>()
     const activeOutline = useRef<number>()
     const activeContent = useRef<number>()
-    const activeRepetitions = useRef<number>()
     const activeConversationRepetitions = useRef<number>()
     const zoneRef = useRef<TimeZoneMode>('local')
     const [state, setState] = useState<ImportState>({ kind: 'idle' })
@@ -39,7 +38,6 @@ export function App() {
     const [outline, setOutline] = useState<TurnPage>()
     const [outlineQuery, setOutlineQuery] = useState('')
     const [contents, setContents] = useState<Record<string, string>>({})
-    const [repetitions, setRepetitions] = useState<RepetitionState>()
     const [conversationRepetitions, setConversationRepetitions] = useState<RepetitionState>()
 
     zoneRef.current = zone
@@ -72,11 +70,6 @@ export function App() {
         loadOutline(route.id, 0, undefined)
         loadConversationRepetitions(route.id)
     }, [route, stats, zone, appliedStartDate, appliedGap])
-
-    useEffect(() => {
-        if (route.page !== 'language' || !stats) return
-        loadRepetitions()
-    }, [route, stats, zone, appliedStartDate])
 
     function receive(message: WorkerMessage) {
         if (message.type === 'progress') {
@@ -114,10 +107,6 @@ export function App() {
             if (message.requestId !== activeContent.current) return
             activeContent.current = undefined
             setContents(current => ({ ...current, ...Object.fromEntries(message.contents.map(content => [content.id, content.body])) }))
-        } else if (message.type === 'repetitions') {
-            if (message.requestId !== activeRepetitions.current) return
-            activeRepetitions.current = undefined
-            setRepetitions({ kind: 'ready', analysis: message.analysis })
         } else if (message.type === 'conversation-repetitions') {
             if (message.requestId !== activeConversationRepetitions.current) return
             activeConversationRepetitions.current = undefined
@@ -145,10 +134,6 @@ export function App() {
             if (message.requestId !== activeContent.current) return
             activeContent.current = undefined
             setDetail({ kind: 'error', message: message.message })
-        } else if (message.operation === 'repetitions') {
-            if (message.requestId !== activeRepetitions.current) return
-            activeRepetitions.current = undefined
-            setRepetitions({ kind: 'error', message: message.message })
         } else {
             if (message.requestId !== activeConversationRepetitions.current) return
             activeConversationRepetitions.current = undefined
@@ -176,9 +161,7 @@ export function App() {
         const requestId = ++nextRequest.current
         activeImport.current = requestId
         activeStatistics.current = undefined
-        activeRepetitions.current = undefined
         activeConversationRepetitions.current = undefined
-        setRepetitions(undefined)
         setConversationRepetitions(undefined)
         setState({ kind: 'loading', detail: source.kind === 'zip' ? `Preparing ${source.archive.name} locally...` : 'Preparing local analytics...' })
         worker.current?.postMessage({ type: 'import', requestId, source, localTimeZone: localTimeZone(), startDate, sessionGapMinutes })
@@ -193,9 +176,7 @@ export function App() {
         setSessionGapMinutes(nextGap)
         setUpdating(true)
         setControlError(undefined)
-        activeRepetitions.current = undefined
         activeConversationRepetitions.current = undefined
-        setRepetitions(undefined)
         setConversationRepetitions(undefined)
         worker.current?.postMessage({ type: 'statistics', requestId, localTimeZone: localTimeZone(), startDate: nextStartDate, sessionGapMinutes: nextGap })
     }
@@ -213,13 +194,6 @@ export function App() {
         worker.current?.postMessage({ type: 'message-content', requestId, id: route.id, timeZone: selectedTimeZone(zone), startDate: appliedStartDate, sessionGapMinutes: appliedGap, ids: [id] })
     }
 
-    function loadRepetitions() {
-        const requestId = ++nextRequest.current
-        activeRepetitions.current = requestId
-        setRepetitions({ kind: 'loading' })
-        worker.current?.postMessage({ type: 'repetitions', requestId, timeZone: selectedTimeZone(zone), startDate: appliedStartDate })
-    }
-
     function loadConversationRepetitions(id: string) {
         const requestId = ++nextRequest.current
         activeConversationRepetitions.current = requestId
@@ -233,10 +207,9 @@ export function App() {
         {state.kind === 'loading' && <Status title="Importing locally" detail={state.detail} />}
         {state.kind === 'error' && <Status title="Import failed" detail={state.message} error />}
         {stats && <>
-            {visibleRoute.page !== 'about' && readyState && <Controls zone={zone} startDate={startDate} gap={sessionGapMinutes} updating={updating} error={controlError} imported={readyState.durationMs} skipped={readyState.skipped} onZone={next => { setZone(next); activeRepetitions.current = undefined; activeConversationRepetitions.current = undefined; setRepetitions(undefined); setConversationRepetitions(undefined); setSelectedDate(busiestDay(next === 'local' ? readyState.local.days : readyState.utc.days)?.date) }} onStartDate={next => applyOptions(next || undefined)} onGap={next => applyOptions(startDate, next)} onReset={() => applyOptions(undefined)} />}
+            {visibleRoute.page !== 'about' && readyState && <Controls zone={zone} startDate={startDate} gap={sessionGapMinutes} updating={updating} error={controlError} imported={readyState.durationMs} skipped={readyState.skipped} onZone={next => { setZone(next); activeConversationRepetitions.current = undefined; setConversationRepetitions(undefined); setSelectedDate(busiestDay(next === 'local' ? readyState.local.days : readyState.utc.days)?.date) }} onStartDate={next => applyOptions(next || undefined)} onGap={next => applyOptions(startDate, next)} onReset={() => applyOptions(undefined)} />}
             {visibleRoute.page === 'overview' && <Overview stats={stats} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
             {visibleRoute.page === 'patterns' && <Patterns stats={stats} zone={zone} />}
-            {visibleRoute.page === 'language' && <LanguageView repetitions={repetitions} />}
             {visibleRoute.page === 'conversations' && <ConversationList conversations={stats.conversations} />}
             {visibleRoute.page === 'conversation' && <ConversationView detail={detail} repetitions={conversationRepetitions} outline={outline} query={outlineQuery} contents={contents} onSearch={query => { setOutlineQuery(query); if (route.page === 'conversation') loadOutline(route.id, 0, query || undefined) }} onPage={offset => route.page === 'conversation' && loadOutline(route.id, offset)} onOpen={openContent} />}
             {visibleRoute.page === 'about' && <About />}
@@ -244,11 +217,10 @@ export function App() {
     </main>
 }
 
-function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) { return <nav class="nav" aria-label="Dashboard">{hasExport && <><a class={route.page === 'overview' ? 'active' : ''} href="#/">Overview</a><a class={route.page === 'patterns' ? 'active' : ''} href="#/patterns">Patterns</a><a class={route.page === 'language' ? 'active' : ''} href="#/language">Language</a><a class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''} href="#/conversations">Conversations</a></>}<a class={route.page === 'about' ? 'active' : ''} href="#/about">About</a></nav> }
+function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) { return <nav class="nav" aria-label="Dashboard">{hasExport && <><a class={route.page === 'overview' ? 'active' : ''} href="#/">Overview</a><a class={route.page === 'patterns' ? 'active' : ''} href="#/patterns">Patterns</a><a class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''} href="#/conversations">Conversations</a></>}<a class={route.page === 'about' ? 'active' : ''} href="#/about">About</a></nav> }
 function Controls({ zone, startDate, gap, updating, error, imported, skipped, onZone, onStartDate, onGap, onReset }: { zone: TimeZoneMode; startDate?: string; gap: number; updating: boolean; error?: string; imported: number; skipped: number; onZone: (zone: TimeZoneMode) => void; onStartDate: (date: string) => void; onGap: (gap: number) => void; onReset: () => void }) { return <div class="toolbar"><div class="toolbar-group"><span>Calendar</span><button class={zone === 'local' ? 'active' : ''} onClick={() => onZone('local')}>Local</button><button class={zone === 'utc' ? 'active' : ''} onClick={() => onZone('utc')}>UTC</button></div><label class="date-filter">Measure from <input type="date" value={startDate ?? ''} onChange={event => onStartDate(event.currentTarget.value)} /></label><button disabled={!startDate || updating} onClick={onReset}>All time</button><label class="gap-filter">Session gap <input type="number" min="1" max="1440" value={gap} onChange={event => onGap(Number(event.currentTarget.value))} /> min</label><small class={error ? 'range-status error-text' : 'range-status'}>{updating ? 'Updating locally...' : error ?? `Observed sessions split after ${gap} minutes`}</small><small class="import-summary">Imported in {(imported / 1000).toFixed(1)}s{skipped ? `; ${skipped} invalid chats skipped` : ''}</small></div> }
 function Overview({ stats, selectedDate, onSelectDate }: { stats: AnalyticsStatistics; selectedDate?: string; onSelectDate: (date: string) => void }) { const [metric, setMetric] = useState<DailyMetric>('prompts'); const selected = stats.days.find(day => day.date === selectedDate); return <><section class="summary-grid analytics-metrics"><Metric label="Chats" value={stats.summary.chats} /><Metric label="Sessions" value={stats.summary.sessions} /><Metric label="Prompts" value={stats.summary.prompts} /><Metric label="Input words" value={stats.summary.input.words} /><Metric label="Output words" value={stats.summary.output.words} /><Metric label="Input characters" value={stats.summary.input.characters} /><Metric label="Output characters" value={stats.summary.output.characters} /><Metric label="Output / input" value={ratio(stats.summary.output, stats.summary.input)} /></section><section class="metric-picker"><span>Daily measure</span>{(['prompts', 'messages', 'inputWords', 'outputWords', 'totalWords'] as DailyMetric[]).map(value => <button class={metric === value ? 'active' : ''} onClick={() => setMetric(value)}>{metricLabel(value)}</button>)}</section><DailyChart days={stats.days} metric={metric} selectedDate={selectedDate} onSelectDate={onSelectDate} /><CalendarHeatmap days={stats.days} metric={metric} /><PromptHistogram days={stats.days} />{selected && <DayAttribution day={selected} />}<Concentration conversations={stats.conversations} /></> }
 function Patterns({ stats, zone }: { stats: AnalyticsStatistics; zone: TimeZoneMode }) { const [metric, setMetric] = useState<'prompts' | 'input' | 'output'>('prompts'); return <><section class="summary-grid"><Metric label="Active days" value={stats.summary.activeDays} /><Metric label="Median session prompts" value={median(stats.sessions.map(session => session.prompts)).toFixed(1)} /><Metric label="Sessions over 25 prompts" value={stats.sessions.filter(session => session.prompts > 25).length} /><Metric label="Sessions over 100 prompts" value={stats.sessions.filter(session => session.prompts > 100).length} /></section><section class="metric-picker"><span>Heatmap measure</span>{(['prompts', 'input', 'output'] as const).map(value => <button class={metric === value ? 'active' : ''} onClick={() => setMetric(value)}>{value === 'prompts' ? 'Prompts' : `${value === 'input' ? 'Input' : 'Output'} words`}</button>)}</section><HourHeatmap cells={stats.hours} metric={metric} /><section class="two-up"><SessionDistribution sessions={stats.sessions} /><SessionStarts sessions={stats.sessions} utc={zone === 'utc'} /></section><section class="two-up"><SessionScatter sessions={stats.sessions} /><Continuation sessions={stats.sessions} /></section><SessionTable sessions={stats.sessions.slice().sort((a, b) => b.prompts - a.prompts).slice(0, 25)} /></> }
-function LanguageView({ repetitions }: { repetitions?: RepetitionState }) { return <PhraseAnalysis title="Language patterns" subtitle="Exact repeated word sequences in the selected corpus." repetitions={repetitions} /> }
 function ConversationList({ conversations }: { conversations: readonly ConversationAnalytics[] }) { const [query, setQuery] = useState(''); const rows = useMemo(() => conversations.filter(chat => `${chat.title} ${chat.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())), [conversations, query]); return <section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Conversation inventory</p><h2>Where the volume comes from.</h2></div><input class="search" value={query} onInput={event => setQuery(event.currentTarget.value)} placeholder="Search title or ID" /></div><SortableTable rows={rows} columns={conversationColumns} initialSort={{ column: 'output', direction: 'descending' }} rowKey={chat => chat.id} /></section> }
 function ConversationView({ detail, repetitions, outline, query, contents, onSearch, onPage, onOpen }: { detail?: DetailState; repetitions?: RepetitionState; outline?: TurnPage; query: string; contents: Record<string, string>; onSearch: (query: string) => void; onPage: (offset: number) => void; onOpen: (id: string) => void }) { if (detail === undefined) return <Status title="Loading conversation" detail="Calculating structure and evidence locally..." />; if (detail.kind === 'missing') return <Status title="Conversation unavailable" detail="No messages fit the current date range." />; if (detail.kind === 'error') return <Status title="Conversation unavailable" detail={detail.message} error />; const value = detail.detail; return <><section class="detail-card"><p class="eyebrow">Conversation evidence</p><h2>{value.summary.title || 'Untitled chat'}</h2><code>{value.summary.id}</code><section class="summary-grid"><Metric label="Prompts" value={value.summary.prompts} /><Metric label="Input words" value={value.summary.input.words} /><Metric label="Output words" value={value.summary.output.words} /><Metric label="Output / input" value={ratio(value.summary.output, value.summary.input)} /><Metric label="Sessions" value={value.summary.sessions} /><Metric label="Active days" value={value.summary.activeDays} /><Metric label="Lifetime" value={value.summary.lifetimeMs === undefined ? 'No duration' : formatDuration(value.summary.lifetimeMs)} /></section></section><SessionCards sessions={value.sessions} /><PhraseAnalysis title="Repeated language" subtitle="Exact sequences repeated within this conversation." repetitions={repetitions} /><TurnTimeline bins={value.turnBins} total={value.totalTurns} onSelect={bin => onPage(bin.startIndex - 1)} /><section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">Turn outline</p><h2>Literal evidence, not an inferred summary.</h2></div><input class="search" value={query} onInput={event => onSearch(event.currentTarget.value)} placeholder="Search exact text" /></div>{outline === undefined ? <p>Loading outline...</p> : <><p class="chart-note">{outline.total.toLocaleString()} matching turns. Select a row to reveal its local text.</p><div class="turn-list">{outline.turns.map(turn => <article class={`turn ${turn.role}`} onClick={() => onOpen(turn.id)}><span>#{turn.index} · {turn.role} · {turn.input.words || turn.output.words} words · session {turn.session || 'untimed'}</span><strong>{turn.preview}</strong>{contents[turn.id] && <pre>{contents[turn.id]}</pre>}</article>)}</div>{outline.offset > 0 && <button onClick={() => onPage(Math.max(0, outline.offset - 50))}>Previous 50 turns</button>} {outline.offset + outline.turns.length < outline.total && <button onClick={() => onPage(outline.offset + outline.turns.length)}>Next 50 turns</button>}</>}</section></> }
 function PhraseAnalysis({ title, subtitle, repetitions }: { title: string; subtitle: string; repetitions?: RepetitionState }) { if (repetitions === undefined || repetitions.kind === 'loading') return <section class="breakdown-card"><p class="eyebrow">{title}</p><h2>Finding repeated language locally...</h2></section>; if (repetitions.kind === 'error') return <section class="breakdown-card error"><p class="eyebrow">{title}</p><strong>{repetitions.message}</strong></section>; return <><section class="breakdown-card"><div class="chart-heading"><div><p class="eyebrow">{title}</p><h2>{subtitle}</h2></div></div><p class="chart-note">Maximal sequences of two or more words; score is occurrences × words. Tables contain the top 500 phrases by score.</p><PhraseTable title="What you repeat" rows={repetitions.analysis.user} /><PhraseTable title="What the assistant repeats" rows={repetitions.analysis.assistant} /></section></> }
@@ -271,7 +243,7 @@ function About() { return <section class="about-page"><div class="page-heading">
 function busiestDay(days: readonly AnalyticsDay[]): AnalyticsDay | undefined { return days.reduce<AnalyticsDay | undefined>((best, day) => !best || day.prompts > best.prompts ? day : best, undefined) }
 function localTimeZone(): string { return Intl.DateTimeFormat().resolvedOptions().timeZone }
 function selectedTimeZone(zone: TimeZoneMode): string { return zone === 'local' ? localTimeZone() : 'UTC' }
-function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/'); return page === 'patterns' ? { page: 'patterns' } : page === 'language' ? { page: 'language' } : page === 'conversations' ? id ? { page: 'conversation', id: decodeURIComponent(id) } : { page: 'conversations' } : page === 'about' ? { page: 'about' } : { page: 'overview' } }
+function readRoute(): Route { const [page, id] = location.hash.slice(2).split('/'); return page === 'patterns' ? { page: 'patterns' } : page === 'conversations' ? id ? { page: 'conversation', id: decodeURIComponent(id) } : { page: 'conversations' } : page === 'about' ? { page: 'about' } : { page: 'overview' } }
 function ratio(output: TextMetrics, input: TextMetrics): string { return input.words === 0 ? 'n/a' : `${(output.words / input.words).toFixed(1)}x` }
 function share(value: number, total: number): string { return total === 0 ? '0%' : `${Math.round(value / total * 100)}%` }
 function formatNumber(value: number): string { return value.toLocaleString() }
@@ -315,6 +287,5 @@ type WorkerMessage =
     | { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }
     | { type: 'conversation-outline'; requestId: number; id: string; page: TurnPage }
     | { type: 'message-content'; requestId: number; id: string; contents: MessageContent[] }
-    | { type: 'repetitions'; requestId: number; analysis: RepeatedPhraseAnalysis }
     | { type: 'conversation-repetitions'; requestId: number; id: string; analysis: RepeatedPhraseAnalysis }
-    | { type: 'failure'; requestId: number; operation: 'import' | 'statistics' | 'conversation-detail' | 'conversation-outline' | 'message-content' | 'repetitions' | 'conversation-repetitions'; message: string }
+    | { type: 'failure'; requestId: number; operation: 'import' | 'statistics' | 'conversation-detail' | 'conversation-outline' | 'message-content' | 'conversation-repetitions'; message: string }

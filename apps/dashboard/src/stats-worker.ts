@@ -23,9 +23,8 @@ type StatisticsRequest = { type: 'statistics'; requestId: number } & SharedOptio
 type DetailRequest = { type: 'conversation-detail'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number }
 type OutlineRequest = { type: 'conversation-outline'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; offset: number; limit: number; query?: string }
 type ContentRequest = { type: 'message-content'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; ids: string[] }
-type RepetitionsRequest = { type: 'repetitions'; requestId: number; timeZone: string; startDate?: string }
 type ConversationRepetitionsRequest = { type: 'conversation-repetitions'; requestId: number; id: string; timeZone: string; startDate?: string }
-type Request = ImportRequest | StatisticsRequest | DetailRequest | OutlineRequest | ContentRequest | RepetitionsRequest | ConversationRepetitionsRequest
+type Request = ImportRequest | StatisticsRequest | DetailRequest | OutlineRequest | ContentRequest | ConversationRepetitionsRequest
 
 type Progress = { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount?: number; bytesRead: number; bytesTotal?: number; chats: number; skipped: number; archiveName?: string }
 type Complete = { type: 'complete'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; chats: number; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
@@ -33,7 +32,6 @@ type Statistics = { type: 'statistics'; requestId: number; local: AnalyticsStati
 type Detail = { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }
 type Outline = { type: 'conversation-outline'; requestId: number; id: string; page: TurnPage }
 type Content = { type: 'message-content'; requestId: number; id: string; contents: MessageContent[] }
-type Repetitions = { type: 'repetitions'; requestId: number; analysis: RepeatedPhraseAnalysis }
 type ConversationRepetitions = { type: 'conversation-repetitions'; requestId: number; id: string; analysis: RepeatedPhraseAnalysis }
 type Failure = { type: 'failure'; requestId: number; operation: Request['type']; message: string }
 
@@ -50,8 +48,7 @@ worker.addEventListener('message', (event: MessageEvent<Request>) => {
             : request.type === 'conversation-detail' ? loadConversationDetail(request)
                     : request.type === 'conversation-outline' ? loadConversationOutline(request)
                     : request.type === 'message-content' ? loadMessageContents(request)
-                        : request.type === 'repetitions' ? loadRepeatedPhrases(request)
-                            : loadConversationRepeatedPhrases(request)
+                        : loadConversationRepeatedPhrases(request)
     void operation.catch(error => worker.postMessage({
         type: 'failure', requestId: request.requestId, operation: request.type,
         message: error instanceof Error ? error.message : String(error),
@@ -202,13 +199,6 @@ async function loadConversationOutline(request: OutlineRequest): Promise<void> {
 async function loadMessageContents(request: ContentRequest): Promise<void> {
     const contents = getMessageContents(chatsFor(request.id), analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes), request.ids)
     worker.postMessage({ type: 'message-content', requestId: request.requestId, id: request.id, contents } satisfies Content)
-}
-
-async function loadRepeatedPhrases(request: RepetitionsRequest): Promise<void> {
-    const key = repetitionKey(request.timeZone, request.startDate)
-    const analysis = repeatedPhraseCache.get(key) ?? collectRepeatedPhrases(retainedChats, { timeZone: request.timeZone, startDate: request.startDate })
-    repeatedPhraseCache.set(key, analysis)
-    worker.postMessage({ type: 'repetitions', requestId: request.requestId, analysis } satisfies Repetitions)
 }
 
 async function loadConversationRepeatedPhrases(request: ConversationRepetitionsRequest): Promise<void> {
