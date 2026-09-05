@@ -14,18 +14,11 @@
     "noImplicitAny": true,
     "noImplicitThis": true,
     "sourceMap": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "rootDir": "src",
     "outDir": "dist",
     "verbatimModuleSyntax": true
   },
-  "exclude": [
-    "node_modules",
-    "**/node_modules/*"
-  ],
-  "include": [
-    "src"
-  ]
+  "exclude": ["node_modules", "**/node_modules/*"],
+  "include": ["src"]
 }

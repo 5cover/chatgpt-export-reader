@@ -1,11 +1,14 @@
 {
-    "name": "chatgpt-export-reader-workspace",
-    "private": true,
-    "packageManager": "pnpm@11.10.0",
-    "scripts": {
-        "build": "pnpm --filter @chatgpt-export-reader/core build && pnpm --filter chatgpt-export-reader build",
-        "build:dashboard": "pnpm --filter @chatgpt-export-reader/dashboard build",
-        "build:all": "pnpm build && pnpm build:dashboard",
-        "lint": "pnpm --filter chatgpt-export-reader lint"
-    }
+  "name": "chatgpt-export-reader-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "build": "pnpm --filter @chatgpt-export-reader/core build && pnpm --filter chatgpt-export-reader build",
+    "build:dashboard": "pnpm --filter @chatgpt-export-reader/dashboard build",
+    "build:all": "pnpm build && pnpm build:dashboard",
+    "lint": "pnpm --filter chatgpt-export-reader lint"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
 }

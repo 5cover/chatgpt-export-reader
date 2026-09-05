@@ -8,12 +8,8 @@
       "program": "${workspaceFolder}/src/cli.ts", // Path to your ENTRY file
       "cwd": "${workspaceFolder}", // Working directory (usually project root)
       "sourceMaps": true, // Enable source map support
-      "outFiles": [
-        "${workspaceFolder}/dist/**/*.js"
-      ], // Path to transpiled JS
-      "skipFiles": [
-        "<node_internals>/**"
-      ] // Skip Node.js internal files (optional)
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"], // Path to transpiled JS
+      "skipFiles": ["<node_internals>/**"] // Skip Node.js internal files (optional)
     }
   ]
 }

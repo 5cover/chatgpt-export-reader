@@ -71,7 +71,6 @@ Branches:
 ## 2. User
 
 Child message 1
-
 ```
 
 Title.Child message 2.md
@@ -135,7 +134,7 @@ an iterative non recurisve approach.
 Basically
 
 - Input: flat array of Message[]. content may be null (bubble children up), user_editable_text (set userInstructions)
-- Output: { message: my.Message, userInstructions: string | null,  }
+- Output: { message: my.Message, userInstructions: string | null, }
 
 Objective :
 

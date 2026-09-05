@@ -1,29 +1,31 @@
 {
-    "name": "@chatgpt-export-reader/core",
-    "version": "1.0.0",
-    "description": "Browser-safe ChatGPT export normalization and usage statistics.",
-    "type": "module",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "files": ["dist"],
-    "publishConfig": {
-        "access": "public"
-    },
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js"
-        }
-    },
-    "scripts": {
-        "build": "tsc -p tsconfig.json",
-        "test": "pnpm build && node --test test/*.test.mjs",
-        "prepack": "pnpm build"
-    },
-    "dependencies": {
-        "zod": "^4.3.6"
-    },
-    "devDependencies": {
-        "typescript": "^6.0.2"
+  "name": "@chatgpt-export-reader/core",
+  "version": "1.0.0",
+  "description": "Browser-safe ChatGPT export normalization and usage statistics.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm build && node --test test/*.test.mjs",
+    "prepack": "pnpm build"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
 }
