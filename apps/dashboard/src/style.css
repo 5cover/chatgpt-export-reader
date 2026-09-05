@@ -635,10 +635,195 @@ td a,
   grid-template-columns: repeat(24, minmax(0, 1fr));
   gap: 4px;
 }
-.hour-heatmap span {
+.hour-heatmap button {
   aspect-ratio: 1.15;
   min-width: 0;
+  padding: 0;
+  border: 0;
   background: #d36c37;
+  cursor: pointer;
+}
+.hour-heatmap button:focus-visible {
+  outline: 2px solid #1d5d59;
+  outline-offset: 2px;
+}
+.hour-heatmap button:disabled {
+  cursor: default;
+}
+.time-heading {
+  padding: 26px 28px;
+  border-left: 4px solid #d36c37;
+  background: rgba(255, 255, 255, 0.8);
+}
+.time-heading > a {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: #1d5d59;
+  font:
+    700 0.78rem/1.2 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  text-decoration: none;
+}
+.time-heading > p:not(.eyebrow) {
+  margin: 8px 0 0;
+  color: #526367;
+}
+.time-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+.time-controls label {
+  display: grid;
+  gap: 5px;
+  color: #526367;
+  font:
+    700 0.72rem/1.2 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.time-controls select {
+  min-width: 150px;
+  padding: 8px 10px;
+  border: 1px solid #aebcb7;
+  color: #1d2a2c;
+  background: #fff;
+  font:
+    0.9rem/1.2 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.temporal-metrics {
+  grid-template-columns: repeat(5, 1fr);
+  margin-top: 16px;
+}
+.bounded-table .table-wrap {
+  max-height: min(58vh, 520px);
+  overflow: auto;
+}
+.bounded-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: #f5f8f6;
+}
+.table-action {
+  display: block;
+  margin-top: 5px;
+  padding: 0;
+  border: 0;
+  color: #2c706b;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.72rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.table-action:disabled {
+  color: #718287;
+  cursor: default;
+  text-decoration: none;
+}
+.evidence-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.evidence-toolbar button,
+.pagination button {
+  padding: 7px 10px;
+  border: 1px solid #aebcb7;
+  background: transparent;
+  cursor: pointer;
+}
+.evidence-toolbar button.active {
+  color: #fff;
+  border-color: #1d5d59;
+  background: #1d5d59;
+}
+.time-message-list {
+  display: grid;
+  gap: 8px;
+}
+.time-message {
+  padding: 14px 16px;
+  border: 1px solid #d3dfda;
+  border-left: 4px solid #d36c37;
+  background: #fff;
+}
+.time-message.assistant {
+  border-left-color: #0b7773;
+}
+.time-message > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  margin-bottom: 8px;
+  color: #6b7d80;
+  font:
+    0.72rem/1.3 ui-sans-serif,
+    system-ui,
+    sans-serif;
+}
+.time-message > div a {
+  color: #1d5d59;
+  font-weight: 700;
+  text-decoration: none;
+}
+.time-message > button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: #1d2a2c;
+  background: transparent;
+  cursor: pointer;
+  font:
+    700 0.95rem/1.45 Georgia,
+    'Times New Roman',
+    serif;
+  text-align: left;
+}
+.time-message > button:hover {
+  color: #1d5d59;
+}
+.time-message pre {
+  max-height: 420px;
+  margin: 14px 0 0;
+  padding: 14px;
+  overflow: auto;
+  color: #183638;
+  background: #eef4f1;
+  font:
+    0.82rem/1.45 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+  color: #526367;
+  font:
+    0.78rem/1.2 ui-sans-serif,
+    system-ui,
+    sans-serif;
+}
+.pagination button:disabled,
+.evidence-toolbar button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 .concentration {
   display: grid;
@@ -885,6 +1070,9 @@ td a,
     grid-template-columns: 1fr;
     gap: 5px;
   }
+  .temporal-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 @media (max-width: 700px) {
   .hour-heatmap {
@@ -902,5 +1090,19 @@ td a,
   }
   .turn-timeline {
     height: 170px;
+  }
+  .time-heading {
+    padding: 20px 18px;
+  }
+  .time-controls label,
+  .time-controls select {
+    width: 100%;
+  }
+  .evidence-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pagination {
+    justify-content: space-between;
   }
 }

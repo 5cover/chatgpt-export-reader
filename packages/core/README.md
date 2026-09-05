@@ -34,3 +34,15 @@ const analytics = collectAnalytics(chats, {
   sessionGapMinutes: 60,
 });
 ```
+
+Use `collectTemporalMessageSlice` to inspect the user or assistant messages behind a weekday-hour aggregate. Omit `weekday` to match that hour on every day. The result includes conversation rollups and matching message evidence; paginate the `messages` array before sending large slices across a process or Worker boundary.
+
+```ts
+import { collectTemporalMessageSlice } from "@chatgpt-export-reader/core";
+
+const slice = collectTemporalMessageSlice(
+  chats,
+  { timeZone: "Europe/Paris", startDate: "2025-01-01" },
+  { role: "user", weekday: 0, hour: 4 },
+);
+```

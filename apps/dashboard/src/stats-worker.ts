@@ -4,6 +4,7 @@ import {
   collectAnalytics,
   collectConversationDetail,
   collectRepeatedPhrases,
+  collectTemporalMessageSlice,
   findConversationTurns,
   getMessageContents,
   isEmptyV1Record,
@@ -13,6 +14,10 @@ import {
   type ConversationDetail,
   type MessageContent,
   type RepeatedPhraseAnalysis,
+  type TemporalConversation,
+  type TemporalMessageEvidence,
+  type TemporalMessageFilter,
+  type TemporalMessageSlice,
   type TurnPage,
 } from '@chatgpt-export-reader/core'
 
@@ -55,8 +60,32 @@ type ConversationRepetitionsRequest = {
   timeZone: string
   startDate?: string
 }
+type TemporalSliceRequest = {
+  type: 'temporal-slice'
+  requestId: number
+  timeZone: string
+  startDate?: string
+  filter: TemporalMessageFilter
+  conversationId?: string
+  order: 'newest' | 'oldest'
+  offset: number
+  limit: number
+}
+type TemporalContentRequest = {
+  type: 'temporal-content'
+  requestId: number
+  cacheKey: string
+  ids: string[]
+}
 type Request =
-  ImportRequest | StatisticsRequest | DetailRequest | OutlineRequest | ContentRequest | ConversationRepetitionsRequest
+  | ImportRequest
+  | StatisticsRequest
+  | DetailRequest
+  | OutlineRequest
+  | ContentRequest
+  | ConversationRepetitionsRequest
+  | TemporalSliceRequest
+  | TemporalContentRequest
 
 type Progress = {
   type: 'progress'
@@ -98,12 +127,30 @@ type ConversationRepetitions = {
   id: string
   analysis: RepeatedPhraseAnalysis
 }
+type TemporalMessagePreview = Omit<TemporalMessageEvidence, 'body'>
+type TemporalSlicePage = {
+  type: 'temporal-slice'
+  requestId: number
+  cacheKey: string
+  filter: TemporalMessageFilter
+  summary: TemporalMessageSlice['summary']
+  conversations: TemporalConversation[]
+  offset: number
+  total: number
+  messages: TemporalMessagePreview[]
+}
+type TemporalContent = {
+  type: 'temporal-content'
+  requestId: number
+  contents: MessageContent[]
+}
 type Failure = { type: 'failure'; requestId: number; operation: Request['type']; message: string }
 
 const worker = globalThis
 const retainedChats: Chat[] = []
 const retainedChatsById = new Map<string, Chat[]>()
 const repeatedPhraseCache = new Map<string, RepeatedPhraseAnalysis>()
+let temporalCache: { key: string; slice: TemporalMessageSlice } | undefined
 const MAX_ARCHIVE_EXTRACTED_BYTES = 1_000_000_000
 
 worker.addEventListener('message', (event: MessageEvent<Request>) => {
@@ -119,7 +166,11 @@ worker.addEventListener('message', (event: MessageEvent<Request>) => {
             ? loadConversationOutline(request)
             : request.type === 'message-content'
               ? loadMessageContents(request)
-              : loadConversationRepeatedPhrases(request)
+              : request.type === 'conversation-repetitions'
+                ? loadConversationRepeatedPhrases(request)
+                : request.type === 'temporal-slice'
+                  ? loadTemporalSlice(request)
+                  : loadTemporalContent(request)
   void operation.catch(error =>
     worker.postMessage({
       type: 'failure',
@@ -136,6 +187,7 @@ async function importExport(request: ImportRequest): Promise<void> {
   retainedChats.length = 0
   retainedChatsById.clear()
   repeatedPhraseCache.clear()
+  temporalCache = undefined
 
   if (request.source.kind === 'folder') await importFolder(request, request.source.files, state)
   else await importZip(request, request.source.archive, state)
@@ -307,6 +359,7 @@ function createConversationParser(
 }
 
 async function recalculateStatistics(request: StatisticsRequest): Promise<void> {
+  temporalCache = undefined
   worker.postMessage({
     type: 'statistics',
     requestId: request.requestId,
@@ -374,6 +427,49 @@ async function loadConversationRepeatedPhrases(request: ConversationRepetitionsR
   } satisfies ConversationRepetitions)
 }
 
+async function loadTemporalSlice(request: TemporalSliceRequest): Promise<void> {
+  if (!Number.isInteger(request.offset) || request.offset < 0)
+    throw new RangeError('offset must be a non-negative integer.')
+  if (!Number.isInteger(request.limit) || request.limit < 1 || request.limit > 100)
+    throw new RangeError('limit must be an integer between 1 and 100.')
+  const cacheKey = temporalKey(request.timeZone, request.startDate, request.filter)
+  if (temporalCache?.key !== cacheKey) {
+    temporalCache = {
+      key: cacheKey,
+      slice: collectTemporalMessageSlice(
+        retainedChats,
+        { timeZone: request.timeZone, startDate: request.startDate },
+        request.filter
+      ),
+    }
+  }
+  const slice = temporalCache.slice
+  const filtered = request.conversationId
+    ? slice.messages.filter(message => message.conversationId === request.conversationId)
+    : slice.messages
+  const ordered = request.order === 'newest' ? filtered : [...filtered].reverse()
+  worker.postMessage({
+    type: 'temporal-slice',
+    requestId: request.requestId,
+    cacheKey,
+    filter: slice.filter,
+    summary: slice.summary,
+    conversations: slice.conversations,
+    offset: request.offset,
+    total: ordered.length,
+    messages: ordered.slice(request.offset, request.offset + request.limit).map(temporalPreview),
+  } satisfies TemporalSlicePage)
+}
+
+async function loadTemporalContent(request: TemporalContentRequest): Promise<void> {
+  if (temporalCache?.key !== request.cacheKey) throw new Error('The selected time slice is no longer available.')
+  const wanted = new Set(request.ids)
+  const contents = temporalCache.slice.messages
+    .filter(message => wanted.has(message.id))
+    .map(message => ({ id: message.id, body: message.body }))
+  worker.postMessage({ type: 'temporal-content', requestId: request.requestId, contents } satisfies TemporalContent)
+}
+
 function statisticsFor(request: SharedOptions): { local: AnalyticsStatistics; utc: AnalyticsStatistics } {
   return {
     local: collectAnalytics(
@@ -388,6 +484,20 @@ function analyticsOptions(timeZone: string, startDate: string | undefined, sessi
 }
 function repetitionKey(timeZone: string, startDate: string | undefined): string {
   return `${timeZone}\u0000${startDate ?? ''}`
+}
+function temporalKey(timeZone: string, startDate: string | undefined, filter: TemporalMessageFilter): string {
+  return `${timeZone}\u0000${startDate ?? ''}\u0000${filter.role}\u0000${filter.weekday ?? 'all'}\u0000${filter.hour}`
+}
+function temporalPreview(message: TemporalMessageEvidence): TemporalMessagePreview {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    conversationTitle: message.conversationTitle,
+    role: message.role,
+    createTime: message.createTime,
+    text: message.text,
+    preview: message.preview,
+  }
 }
 function chatsFor(id: string): Chat[] {
   const chats = retainedChatsById.get(id)

@@ -55,6 +55,47 @@ export type TemporalCell = {
   sessionsStarted: number;
 };
 
+export type TemporalMessageRole = "user" | "assistant";
+
+export type TemporalMessageFilter = {
+  role: TemporalMessageRole;
+  hour: number;
+  weekday?: number;
+};
+
+export type TemporalMessageEvidence = {
+  id: string;
+  conversationId: string;
+  conversationTitle: string;
+  role: TemporalMessageRole;
+  createTime: string;
+  text: TextMetrics;
+  preview: string;
+  body: string;
+};
+
+export type TemporalConversation = {
+  id: string;
+  title: string;
+  messages: number;
+  text: TextMetrics;
+  activeDays: number;
+  firstMessageAt: string;
+  lastMessageAt: string;
+};
+
+export type TemporalMessageSlice = {
+  filter: TemporalMessageFilter;
+  summary: {
+    messages: number;
+    conversations: number;
+    activeDays: number;
+    text: TextMetrics;
+  };
+  messages: TemporalMessageEvidence[];
+  conversations: TemporalConversation[];
+};
+
 export type ConversationAnalytics = {
   id: string;
   title: string;
@@ -170,6 +211,14 @@ type MutableConversation = Omit<
   first?: number;
   last?: number;
 };
+type MutableTemporalConversation = Omit<
+  TemporalConversation,
+  "activeDays" | "firstMessageAt" | "lastMessageAt"
+> & {
+  dates: Set<string>;
+  first: number;
+  last: number;
+};
 
 const textMetricCache = new WeakMap<Message, TextMetrics>();
 
@@ -180,6 +229,90 @@ export function collectAnalytics(
   const context = createContext(options);
   const events = collectEvents(chats, context);
   return aggregate(events, context);
+}
+
+export function collectTemporalMessageSlice(
+  chats: Iterable<Chat>,
+  options: AnalyticsOptions,
+  filter: TemporalMessageFilter,
+): TemporalMessageSlice {
+  validateTemporalFilter(filter);
+  const context = createContext(options);
+  const conversations = new Map<string, MutableTemporalConversation>();
+  const dates = new Set<string>();
+  const totalText = emptyText();
+  const messages = collectEvents(chats, context)
+    .filter((event) => {
+      if (event.role !== filter.role || event.createTime === undefined)
+        return false;
+      const parts = context.timeParts(event.createTime);
+      return (
+        parts.hour === filter.hour &&
+        (filter.weekday === undefined || parts.weekday === filter.weekday)
+      );
+    })
+    .sort(
+      (left, right) =>
+        right.createTime! - left.createTime! || right.order - left.order,
+    )
+    .map((event) => {
+      const timestamp = event.createTime!;
+      const text = filter.role === "user" ? event.input : event.output;
+      const conversation = conversations.get(event.chatId) ?? {
+        id: event.chatId,
+        title: event.title,
+        messages: 0,
+        text: emptyText(),
+        dates: new Set<string>(),
+        first: timestamp,
+        last: timestamp,
+      };
+      conversations.set(event.chatId, conversation);
+      conversation.messages++;
+      addText(conversation.text, text);
+      const date = context.dayKey(timestamp);
+      conversation.dates.add(date);
+      dates.add(date);
+      addText(totalText, text);
+      conversation.first = Math.min(conversation.first, timestamp);
+      conversation.last = Math.max(conversation.last, timestamp);
+      return {
+        id: event.id,
+        conversationId: event.chatId,
+        conversationTitle: event.title,
+        role: filter.role,
+        createTime: new Date(timestamp).toISOString(),
+        text,
+        preview: preview(event.body),
+        body: event.body,
+      };
+    });
+
+  return {
+    filter: { ...filter },
+    summary: {
+      messages: messages.length,
+      conversations: conversations.size,
+      activeDays: dates.size,
+      text: totalText,
+    },
+    messages,
+    conversations: [...conversations.values()]
+      .map((conversation) => ({
+        id: conversation.id,
+        title: conversation.title,
+        messages: conversation.messages,
+        text: conversation.text,
+        activeDays: conversation.dates.size,
+        firstMessageAt: new Date(conversation.first).toISOString(),
+        lastMessageAt: new Date(conversation.last).toISOString(),
+      }))
+      .sort(
+        (left, right) =>
+          right.messages - left.messages ||
+          left.title.localeCompare(right.title),
+      ),
+  };
 }
 
 export function collectConversationDetail(
@@ -528,6 +661,20 @@ function includeMessage(message: Message, context: Context): boolean {
     message.createTime !== undefined &&
     context.dayKey(message.createTime) >= context.startDate
   );
+}
+
+function validateTemporalFilter(filter: TemporalMessageFilter): void {
+  if (filter.role !== "user" && filter.role !== "assistant")
+    throw new RangeError('role must be "user" or "assistant".');
+  if (!Number.isInteger(filter.hour) || filter.hour < 0 || filter.hour > 23)
+    throw new RangeError("hour must be an integer between 0 and 23.");
+  if (
+    filter.weekday !== undefined &&
+    (!Number.isInteger(filter.weekday) ||
+      filter.weekday < 0 ||
+      filter.weekday > 6)
+  )
+    throw new RangeError("weekday must be an integer between 0 and 6.");
 }
 
 function sortEvents(events: readonly Event[]): Event[] {

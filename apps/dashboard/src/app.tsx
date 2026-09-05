@@ -9,6 +9,10 @@ import type {
   MessageContent,
   RepeatedPhraseAnalysis,
   SessionAnalytics,
+  TemporalConversation,
+  TemporalMessageEvidence,
+  TemporalMessageFilter,
+  TemporalMessageRole,
   TurnPage,
   TextMetrics,
 } from '@chatgpt-export-reader/core'
@@ -34,12 +38,25 @@ type Route =
   | { page: 'about' }
   | { page: 'overview' }
   | { page: 'patterns' }
+  | { page: 'time'; filter: TemporalMessageFilter }
   | { page: 'conversations' }
   | { page: 'conversation'; id: string }
 type DetailState =
   { kind: 'ready'; detail: ConversationDetail } | { kind: 'missing' } | { kind: 'error'; message: string }
 type RepetitionState =
   { kind: 'loading' } | { kind: 'ready'; analysis: RepeatedPhraseAnalysis } | { kind: 'error'; message: string }
+type TemporalMessagePreview = Omit<TemporalMessageEvidence, 'body'>
+type TemporalPage = {
+  cacheKey: string
+  filter: TemporalMessageFilter
+  summary: { messages: number; conversations: number; activeDays: number; text: TextMetrics }
+  conversations: TemporalConversation[]
+  offset: number
+  total: number
+  messages: TemporalMessagePreview[]
+}
+type TemporalState =
+  { kind: 'loading' } | { kind: 'ready'; page: TemporalPage; updating: boolean } | { kind: 'error'; message: string }
 
 export function App() {
   const folderInput = useRef<HTMLInputElement>(null)
@@ -52,6 +69,8 @@ export function App() {
   const activeOutline = useRef<number>()
   const activeContent = useRef<number>()
   const activeConversationRepetitions = useRef<number>()
+  const activeTemporalSlice = useRef<number>()
+  const activeTemporalContent = useRef<number>()
   const zoneRef = useRef<TimeZoneMode>('local')
   const [state, setState] = useState<ImportState>({ kind: 'idle' })
   const [zone, setZone] = useState<TimeZoneMode>('local')
@@ -66,6 +85,10 @@ export function App() {
   const [outlineQuery, setOutlineQuery] = useState('')
   const [contents, setContents] = useState<Record<string, string>>({})
   const [conversationRepetitions, setConversationRepetitions] = useState<RepetitionState>()
+  const [temporal, setTemporal] = useState<TemporalState>()
+  const [temporalConversation, setTemporalConversation] = useState<string>()
+  const [temporalOrder, setTemporalOrder] = useState<'newest' | 'oldest'>('newest')
+  const [temporalContents, setTemporalContents] = useState<Record<string, string>>({})
 
   zoneRef.current = zone
   const readyState = state.kind === 'ready' ? state : undefined
@@ -110,6 +133,16 @@ export function App() {
     loadOutline(route.id, 0, undefined)
     loadConversationRepetitions(route.id)
   }, [route, stats, zone, appliedStartDate, appliedGap])
+
+  useEffect(() => {
+    if (route.page !== 'time' || !stats) return
+    activeTemporalContent.current = undefined
+    setTemporalConversation(undefined)
+    setTemporalOrder('newest')
+    setTemporalContents({})
+    setTemporal({ kind: 'loading' })
+    loadTemporalSlice(route.filter, 0, undefined, 'newest')
+  }, [route, stats, zone, appliedStartDate])
 
   function receive(message: WorkerMessage) {
     if (message.type === 'progress') {
@@ -175,6 +208,17 @@ export function App() {
       if (message.requestId !== activeConversationRepetitions.current) return
       activeConversationRepetitions.current = undefined
       setConversationRepetitions({ kind: 'ready', analysis: message.analysis })
+    } else if (message.type === 'temporal-slice') {
+      if (message.requestId !== activeTemporalSlice.current) return
+      activeTemporalSlice.current = undefined
+      setTemporal({ kind: 'ready', page: message, updating: false })
+    } else if (message.type === 'temporal-content') {
+      if (message.requestId !== activeTemporalContent.current) return
+      activeTemporalContent.current = undefined
+      setTemporalContents(current => ({
+        ...current,
+        ...Object.fromEntries(message.contents.map(content => [content.id, content.body])),
+      }))
     } else if (message.operation === 'import') {
       if (message.requestId !== activeImport.current) return
       activeImport.current = undefined
@@ -198,6 +242,14 @@ export function App() {
       if (message.requestId !== activeContent.current) return
       activeContent.current = undefined
       setDetail({ kind: 'error', message: message.message })
+    } else if (message.operation === 'temporal-slice') {
+      if (message.requestId !== activeTemporalSlice.current) return
+      activeTemporalSlice.current = undefined
+      setTemporal({ kind: 'error', message: message.message })
+    } else if (message.operation === 'temporal-content') {
+      if (message.requestId !== activeTemporalContent.current) return
+      activeTemporalContent.current = undefined
+      setTemporal({ kind: 'error', message: message.message })
     } else {
       if (message.requestId !== activeConversationRepetitions.current) return
       activeConversationRepetitions.current = undefined
@@ -226,7 +278,11 @@ export function App() {
     activeImport.current = requestId
     activeStatistics.current = undefined
     activeConversationRepetitions.current = undefined
+    activeTemporalSlice.current = undefined
+    activeTemporalContent.current = undefined
     setConversationRepetitions(undefined)
+    setTemporal(undefined)
+    setTemporalContents({})
     setState({
       kind: 'loading',
       detail: source.kind === 'zip' ? `Preparing ${source.archive.name}...` : 'Preparing analytics...',
@@ -251,7 +307,11 @@ export function App() {
     setUpdating(true)
     setControlError(undefined)
     activeConversationRepetitions.current = undefined
+    activeTemporalSlice.current = undefined
+    activeTemporalContent.current = undefined
     setConversationRepetitions(undefined)
+    setTemporal(undefined)
+    setTemporalContents({})
     worker.current?.postMessage({
       type: 'statistics',
       requestId,
@@ -302,6 +362,35 @@ export function App() {
       timeZone: selectedTimeZone(zone),
       startDate: appliedStartDate,
     })
+  }
+
+  function loadTemporalSlice(
+    filter: TemporalMessageFilter,
+    offset: number,
+    conversationId = temporalConversation,
+    order = temporalOrder
+  ) {
+    const requestId = ++nextRequest.current
+    activeTemporalSlice.current = requestId
+    setTemporal(current => (current?.kind === 'ready' ? { ...current, updating: true } : { kind: 'loading' }))
+    worker.current?.postMessage({
+      type: 'temporal-slice',
+      requestId,
+      timeZone: selectedTimeZone(zone),
+      startDate: appliedStartDate,
+      filter,
+      conversationId,
+      order,
+      offset,
+      limit: 50,
+    })
+  }
+
+  function openTemporalContent(id: string, cacheKey: string) {
+    if (temporalContents[id] !== undefined) return
+    const requestId = ++nextRequest.current
+    activeTemporalContent.current = requestId
+    worker.current?.postMessage({ type: 'temporal-content', requestId, cacheKey, ids: [id] })
   }
 
   return (
@@ -367,6 +456,33 @@ export function App() {
             <Overview stats={stats} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
           )}
           {visibleRoute.page === 'patterns' && <Patterns stats={stats} zone={zone} />}
+          {visibleRoute.page === 'time' && (
+            <TemporalView
+              route={visibleRoute}
+              state={temporal}
+              zone={zone}
+              conversationId={temporalConversation}
+              order={temporalOrder}
+              contents={temporalContents}
+              onFilter={filter => {
+                location.hash = temporalRoute(filter)
+              }}
+              onConversation={id => {
+                activeTemporalContent.current = undefined
+                setTemporalConversation(id)
+                setTemporalContents({})
+                loadTemporalSlice(visibleRoute.filter, 0, id, temporalOrder)
+              }}
+              onOrder={order => {
+                activeTemporalContent.current = undefined
+                setTemporalOrder(order)
+                setTemporalContents({})
+                loadTemporalSlice(visibleRoute.filter, 0, temporalConversation, order)
+              }}
+              onPage={offset => loadTemporalSlice(visibleRoute.filter, offset)}
+              onOpen={openTemporalContent}
+            />
+          )}
           {visibleRoute.page === 'conversations' && <ConversationList conversations={stats.conversations} />}
           {visibleRoute.page === 'conversation' && (
             <ConversationView
@@ -398,7 +514,7 @@ function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) {
           <a class={route.page === 'overview' ? 'active' : ''} href="#/">
             Overview
           </a>
-          <a class={route.page === 'patterns' ? 'active' : ''} href="#/patterns">
+          <a class={route.page === 'patterns' || route.page === 'time' ? 'active' : ''} href="#/patterns">
             Patterns
           </a>
           <a
@@ -585,7 +701,13 @@ function Patterns({ stats, zone }: { stats: AnalyticsStatistics; zone: TimeZoneM
             </button>
           ))}
         </section>
-        <HourHeatmap cells={stats.hours} metric={metric} />
+        <HourHeatmap
+          cells={stats.hours}
+          metric={metric}
+          onSelect={filter => {
+            location.hash = temporalRoute(filter)
+          }}
+        />
       </Accordion>
       <Accordion title="Session profile" description="Compare session size and start times.">
         <section class="two-up">
@@ -607,6 +729,239 @@ function Patterns({ stats, zone }: { stats: AnalyticsStatistics; zone: TimeZoneM
             .slice(0, 25)}
         />
       </Accordion>
+    </>
+  )
+}
+function TemporalView({
+  route,
+  state,
+  zone,
+  conversationId,
+  order,
+  contents,
+  onFilter,
+  onConversation,
+  onOrder,
+  onPage,
+  onOpen,
+}: {
+  route: Extract<Route, { page: 'time' }>
+  state?: TemporalState
+  zone: TimeZoneMode
+  conversationId?: string
+  order: 'newest' | 'oldest'
+  contents: Record<string, string>
+  onFilter: (filter: TemporalMessageFilter) => void
+  onConversation: (id?: string) => void
+  onOrder: (order: 'newest' | 'oldest') => void
+  onPage: (offset: number) => void
+  onOpen: (id: string, cacheKey: string) => void
+}) {
+  const page = state?.kind === 'ready' ? state.page : undefined
+  const roleLabel = route.filter.role === 'user' ? 'User prompts' : 'Assistant messages'
+  const scopeLabel =
+    route.filter.weekday === undefined
+      ? `Every day at ${hourLabel(route.filter.hour)}`
+      : `${weekdayName(route.filter.weekday)} at ${hourLabel(route.filter.hour)}`
+  const selectedConversation = page?.conversations.find(conversation => conversation.id === conversationId)
+  const conversationColumns: readonly SortableColumn<TemporalConversation>[] = [
+    {
+      id: 'title',
+      label: 'Conversation',
+      align: 'left',
+      compare: (left, right) => left.title.localeCompare(right.title),
+      render: conversation => (
+        <>
+          <a href={`#/conversations/${encodeURIComponent(conversation.id)}`}>{conversation.title || 'Untitled chat'}</a>
+          <button
+            class="table-action"
+            type="button"
+            disabled={conversation.id === conversationId}
+            onClick={() => onConversation(conversation.id)}>
+            {conversation.id === conversationId ? 'Showing messages' : 'Show messages'}
+          </button>
+        </>
+      ),
+    },
+    {
+      id: 'messages',
+      label: route.filter.role === 'user' ? 'Prompts' : 'Messages',
+      compare: (left, right) => left.messages - right.messages,
+      render: conversation => conversation.messages,
+    },
+    {
+      id: 'words',
+      label: 'Words',
+      compare: (left, right) => left.text.words - right.text.words,
+      render: conversation => formatNumber(conversation.text.words),
+    },
+    {
+      id: 'days',
+      label: 'Active days',
+      compare: (left, right) => left.activeDays - right.activeDays,
+      render: conversation => conversation.activeDays,
+    },
+    {
+      id: 'first',
+      label: 'First match',
+      compare: (left, right) => Date.parse(left.firstMessageAt) - Date.parse(right.firstMessageAt),
+      render: conversation => formatInTimeZone(conversation.firstMessageAt, selectedTimeZone(zone)),
+    },
+    {
+      id: 'last',
+      label: 'Last match',
+      compare: (left, right) => Date.parse(left.lastMessageAt) - Date.parse(right.lastMessageAt),
+      render: conversation => formatInTimeZone(conversation.lastMessageAt, selectedTimeZone(zone)),
+    },
+  ]
+
+  return (
+    <>
+      <section class="time-heading">
+        <a href="#/patterns">Back to patterns</a>
+        <p class="eyebrow">Time slice</p>
+        <h2>{scopeLabel}</h2>
+        <p>{roleLabel} in the selected calendar and date range.</p>
+        <div class="time-controls">
+          <label>
+            Messages
+            <select
+              value={route.filter.role}
+              onChange={event => onFilter({ ...route.filter, role: event.currentTarget.value as TemporalMessageRole })}>
+              <option value="user">User prompts</option>
+              <option value="assistant">Assistant messages</option>
+            </select>
+          </label>
+          <label>
+            Weekday
+            <select
+              value={route.filter.weekday ?? 'all'}
+              onChange={event => {
+                const value = event.currentTarget.value
+                onFilter({
+                  ...route.filter,
+                  weekday: value === 'all' ? undefined : Number(value),
+                })
+              }}>
+              <option value="all">All weekdays</option>
+              {Array.from({ length: 7 }, (_, weekday) => (
+                <option value={weekday}>{weekdayName(weekday)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Hour
+            <select
+              value={route.filter.hour}
+              onChange={event => onFilter({ ...route.filter, hour: Number(event.currentTarget.value) })}>
+              {Array.from({ length: 24 }, (_, hour) => (
+                <option value={hour}>{hourLabel(hour)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
+      {state === undefined || state.kind === 'loading' ? (
+        <Status title="Loading time slice" detail="Finding matching messages..." />
+      ) : state.kind === 'error' ? (
+        <Status title="Time slice unavailable" detail={state.message} error />
+      ) : (
+        <>
+          <section class="summary-grid temporal-metrics">
+            <Metric label={route.filter.role === 'user' ? 'Prompts' : 'Messages'} value={page!.summary.messages} />
+            <Metric label="Conversations" value={page!.summary.conversations} />
+            <Metric label="Active days" value={page!.summary.activeDays} />
+            <Metric label="Words" value={page!.summary.text.words} />
+            <Metric label="Characters" value={page!.summary.text.characters} />
+          </section>
+          <Accordion
+            title="Conversation attribution"
+            description={`${page!.conversations.length.toLocaleString()} conversations contain matching messages.`}
+            defaultOpen>
+            {page!.conversations.length === 0 ? (
+              <p class="empty-table">No messages match this time slice.</p>
+            ) : (
+              <div class="bounded-table">
+                <SortableTable
+                  rows={page!.conversations}
+                  columns={conversationColumns}
+                  initialSort={{ column: 'messages', direction: 'descending' }}
+                  rowKey={conversation => conversation.id}
+                />
+              </div>
+            )}
+          </Accordion>
+          <Accordion
+            title="Message evidence"
+            description={
+              selectedConversation
+                ? `${page!.total.toLocaleString()} matches in ${selectedConversation.title || 'Untitled chat'}.`
+                : `${page!.total.toLocaleString()} matching messages.`
+            }
+            defaultOpen>
+            <div class="evidence-toolbar">
+              <div>
+                {selectedConversation && (
+                  <button type="button" onClick={() => onConversation(undefined)}>
+                    Show all conversations
+                  </button>
+                )}
+              </div>
+              <div class="toolbar-group">
+                <span>Order</span>
+                <button class={order === 'newest' ? 'active' : ''} type="button" onClick={() => onOrder('newest')}>
+                  Newest
+                </button>
+                <button class={order === 'oldest' ? 'active' : ''} type="button" onClick={() => onOrder('oldest')}>
+                  Oldest
+                </button>
+              </div>
+            </div>
+            {state.updating && <p class="range-status">Updating...</p>}
+            {page!.messages.length === 0 ? (
+              <p class="empty-table">No messages match the current conversation filter.</p>
+            ) : (
+              <div class="time-message-list">
+                {page!.messages.map(message => (
+                  <article class={`time-message ${message.role}`} key={message.id}>
+                    <div>
+                      <time dateTime={message.createTime}>
+                        {formatInTimeZone(message.createTime, selectedTimeZone(zone))}
+                      </time>
+                      <a href={`#/conversations/${encodeURIComponent(message.conversationId)}`}>
+                        {message.conversationTitle || 'Untitled chat'}
+                      </a>
+                      <span>{message.text.words.toLocaleString()} words</span>
+                    </div>
+                    <button type="button" onClick={() => onOpen(message.id, page!.cacheKey)}>
+                      {message.preview || 'Empty message'}
+                    </button>
+                    {contents[message.id] !== undefined && <pre>{contents[message.id]}</pre>}
+                  </article>
+                ))}
+              </div>
+            )}
+            <div class="pagination">
+              <button
+                type="button"
+                disabled={page!.offset === 0 || state.updating}
+                onClick={() => onPage(Math.max(0, page!.offset - 50))}>
+                Previous 50
+              </button>
+              <span>
+                {page!.total === 0 ? 0 : page!.offset + 1}-{Math.min(page!.offset + page!.messages.length, page!.total)}{' '}
+                of {page!.total.toLocaleString()}
+              </span>
+              <button
+                type="button"
+                disabled={page!.offset + page!.messages.length >= page!.total || state.updating}
+                onClick={() => onPage(page!.offset + page!.messages.length)}>
+                Next 50
+              </button>
+            </div>
+          </Accordion>
+        </>
+      )}
     </>
   )
 }
@@ -925,9 +1280,11 @@ function CalendarHeatmap({ days, metric }: { days: readonly AnalyticsDay[]; metr
 function HourHeatmap({
   cells,
   metric,
+  onSelect,
 }: {
   cells: readonly { weekday: number; hour: number; prompts: number; input: TextMetrics; output: TextMetrics }[]
   metric: 'prompts' | 'input' | 'output'
+  onSelect: (filter: TemporalMessageFilter) => void
 }) {
   const value = (cell: (typeof cells)[number]) => (metric === 'prompts' ? cell.prompts : cell[metric].words)
   const max = Math.max(...cells.map(value), 1)
@@ -941,14 +1298,27 @@ function HourHeatmap({
         </div>
       </div>
       <div class="hour-heatmap">
-        {cells.map(cell => (
-          <span
-            title={`${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][cell.weekday]} ${cell.hour}:00: ${value(cell)} ${label}`}
-            style={{ opacity: `${heatmapOpacity(value(cell), max, 0.1)}` }}
-          />
-        ))}
+        {cells.map(cell => {
+          const count = value(cell)
+          const title = `${weekdayName(cell.weekday, 'short')} ${hourLabel(cell.hour)}: ${count.toLocaleString()} ${label}`
+          return (
+            <button
+              type="button"
+              title={title}
+              aria-label={`${title}. Explore messages.`}
+              disabled={count === 0}
+              onClick={() =>
+                onSelect({ role: metric === 'output' ? 'assistant' : 'user', weekday: cell.weekday, hour: cell.hour })
+              }
+              style={{ opacity: `${heatmapOpacity(count, max, 0.1)}` }}
+            />
+          )
+        })}
       </div>
-      <p class="chart-note">Rows run Sunday to Saturday; columns run 00:00 to 23:00 in the selected timezone.</p>
+      <p class="chart-note">
+        Rows run Sunday to Saturday; columns run 00:00 to 23:00 in the selected timezone. Select a cell to inspect its
+        messages.
+      </p>
     </section>
   )
 }
@@ -1226,16 +1596,41 @@ function selectedTimeZone(zone: TimeZoneMode): string {
   return zone === 'local' ? localTimeZone() : 'UTC'
 }
 function readRoute(): Route {
-  const [page, id] = location.hash.slice(2).split('/')
+  const [page, section, role, weekday, hour] = location.hash.slice(2).split('/')
+  if (page === 'patterns' && section === 'time') {
+    const parsedHour = Number(hour)
+    const parsedWeekday = weekday === 'all' ? undefined : Number(weekday)
+    if (
+      (role === 'user' || role === 'assistant') &&
+      Number.isInteger(parsedHour) &&
+      parsedHour >= 0 &&
+      parsedHour <= 23 &&
+      (parsedWeekday === undefined || (Number.isInteger(parsedWeekday) && parsedWeekday >= 0 && parsedWeekday <= 6))
+    )
+      return { page: 'time', filter: { role, weekday: parsedWeekday, hour: parsedHour } }
+  }
   return page === 'patterns'
     ? { page: 'patterns' }
     : page === 'conversations'
-      ? id
-        ? { page: 'conversation', id: decodeURIComponent(id) }
+      ? section
+        ? { page: 'conversation', id: decodeURIComponent(section) }
         : { page: 'conversations' }
       : page === 'about'
         ? { page: 'about' }
         : { page: 'overview' }
+}
+function temporalRoute(filter: TemporalMessageFilter): string {
+  return `#/patterns/time/${filter.role}/${filter.weekday ?? 'all'}/${filter.hour}`
+}
+function weekdayName(weekday: number, length: 'long' | 'short' = 'long'): string {
+  const names =
+    length === 'short'
+      ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  return names[weekday]!
+}
+function hourLabel(hour: number): string {
+  return `${String(hour).padStart(2, '0')}:00`
 }
 function ratio(output: TextMetrics, input: TextMetrics): string {
   return input.words === 0 ? 'n/a' : `${(output.words / input.words).toFixed(1)}x`
@@ -1248,6 +1643,15 @@ function formatNumber(value: number): string {
 }
 function formatDate(value: string): string {
   return new Date(value).toLocaleString()
+}
+const timeZoneFormatters = new Map<string, Intl.DateTimeFormat>()
+function formatInTimeZone(value: string, timeZone: string): string {
+  let formatter = timeZoneFormatters.get(timeZone)
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat(undefined, { timeZone, dateStyle: 'medium', timeStyle: 'short' })
+    timeZoneFormatters.set(timeZone, formatter)
+  }
+  return formatter.format(new Date(value))
 }
 function formatDuration(value: number): string {
   const minutes = Math.round(value / 60_000)
@@ -1423,6 +1827,8 @@ type WorkerMessage =
   | { type: 'conversation-outline'; requestId: number; id: string; page: TurnPage }
   | { type: 'message-content'; requestId: number; id: string; contents: MessageContent[] }
   | { type: 'conversation-repetitions'; requestId: number; id: string; analysis: RepeatedPhraseAnalysis }
+  | ({ type: 'temporal-slice'; requestId: number } & TemporalPage)
+  | { type: 'temporal-content'; requestId: number; contents: MessageContent[] }
   | {
       type: 'failure'
       requestId: number
@@ -1433,5 +1839,7 @@ type WorkerMessage =
         | 'conversation-outline'
         | 'message-content'
         | 'conversation-repetitions'
+        | 'temporal-slice'
+        | 'temporal-content'
       message: string
     }

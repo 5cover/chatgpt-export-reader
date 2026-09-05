@@ -4,6 +4,7 @@ import {
   collectAnalytics,
   collectConversationDetail,
   collectRepeatedPhrases,
+  collectTemporalMessageSlice,
   findConversationTurns,
   getMessageContents,
 } from "../dist/analytics.js";
@@ -180,6 +181,126 @@ test("conversation evidence pages literal previews and returns bodies only for s
   assert.equal(
     getMessageContents(source, { timeZone: "UTC" }, [page.turns[0].id])[0].body,
     "Find the important phrase here",
+  );
+});
+
+test("temporal message slices filter by local weekday, hour, role, and cutoff", () => {
+  const source = [
+    chat("one", [
+      message("old", "user", "before cutoff", Date.UTC(2024, 11, 25, 3)),
+      message("u1", "user", "Wednesday at four", Date.UTC(2025, 0, 1, 3)),
+      message(
+        "a1",
+        "assistant",
+        "Assistant at four",
+        Date.UTC(2025, 0, 1, 3, 5),
+      ),
+      message("u2", "user", "Thursday at four", Date.UTC(2025, 0, 2, 3)),
+      message("u3", "user", "Thursday at five", Date.UTC(2025, 0, 2, 4)),
+      message("unknown", "user", "No timestamp"),
+    ]),
+  ];
+
+  const exact = collectTemporalMessageSlice(
+    source,
+    { timeZone: "Europe/Paris", startDate: "2025-01-01" },
+    { role: "user", weekday: 3, hour: 4 },
+  );
+  const everyWeekday = collectTemporalMessageSlice(
+    source,
+    { timeZone: "Europe/Paris", startDate: "2025-01-01" },
+    { role: "user", hour: 4 },
+  );
+  const assistant = collectTemporalMessageSlice(
+    source,
+    { timeZone: "Europe/Paris", startDate: "2025-01-01" },
+    { role: "assistant", hour: 4 },
+  );
+
+  assert.deepEqual(
+    exact.messages.map((entry) => entry.body),
+    ["Wednesday at four"],
+  );
+  assert.deepEqual(
+    everyWeekday.messages.map((entry) => entry.body),
+    ["Thursday at four", "Wednesday at four"],
+  );
+  assert.deepEqual(
+    assistant.messages.map((entry) => entry.body),
+    ["Assistant at four"],
+  );
+});
+
+test("temporal message slices aggregate conversations and validate filters", () => {
+  const source = [
+    chat("one", [
+      message("u1", "user", "first matching prompt", at(4)),
+      message("u2", "user", "second matching prompt", at(4, 30)),
+    ]),
+    chat("two", [message("u3", "user", "another chat", at(4, 45))]),
+  ];
+  const value = collectTemporalMessageSlice(
+    source,
+    { timeZone: "UTC" },
+    { role: "user", hour: 4 },
+  );
+
+  assert.equal(value.messages.length, 3);
+  assert.deepEqual(value.summary, {
+    messages: 3,
+    conversations: 2,
+    activeDays: 1,
+    text: { characters: 55, words: 8 },
+  });
+  assert.deepEqual(
+    value.messages.map((entry) => entry.body),
+    ["another chat", "second matching prompt", "first matching prompt"],
+  );
+  assert.deepEqual(value.conversations[0], {
+    id: "one",
+    title: "one",
+    messages: 2,
+    text: { characters: 43, words: 6 },
+    activeDays: 1,
+    firstMessageAt: new Date(at(4)).toISOString(),
+    lastMessageAt: new Date(at(4, 30)).toISOString(),
+  });
+  assert.throws(
+    () =>
+      collectTemporalMessageSlice(
+        source,
+        { timeZone: "UTC" },
+        {
+          role: "user",
+          hour: 24,
+        },
+      ),
+    /hour must be an integer between 0 and 23/,
+  );
+  assert.throws(
+    () =>
+      collectTemporalMessageSlice(
+        source,
+        { timeZone: "UTC" },
+        {
+          role: "user",
+          weekday: -1,
+          hour: 4,
+        },
+      ),
+    /weekday must be an integer between 0 and 6/,
+  );
+  assert.throws(
+    () =>
+      collectTemporalMessageSlice(
+        source,
+        { timeZone: "UTC" },
+        {
+          role: "system",
+          hour: 4,
+        },
+      ),
+    /role must be "user" or "assistant"/,
   );
 });
 
