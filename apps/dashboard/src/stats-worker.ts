@@ -3,6 +3,7 @@ import { Unzip, UnzipInflate } from 'fflate'
 import {
     collectAnalytics,
     collectConversationDetail,
+    collectRepeatedPhrases,
     findConversationTurns,
     getMessageContents,
     isEmptyV1Record,
@@ -11,6 +12,7 @@ import {
     type Chat,
     type ConversationDetail,
     type MessageContent,
+    type RepeatedPhraseAnalysis,
     type TurnPage,
 } from '@chatgpt-export-reader/core'
 
@@ -21,7 +23,9 @@ type StatisticsRequest = { type: 'statistics'; requestId: number } & SharedOptio
 type DetailRequest = { type: 'conversation-detail'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number }
 type OutlineRequest = { type: 'conversation-outline'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; offset: number; limit: number; query?: string }
 type ContentRequest = { type: 'message-content'; requestId: number; id: string; timeZone: string; startDate?: string; sessionGapMinutes: number; ids: string[] }
-type Request = ImportRequest | StatisticsRequest | DetailRequest | OutlineRequest | ContentRequest
+type RepetitionsRequest = { type: 'repetitions'; requestId: number; timeZone: string; startDate?: string }
+type ConversationRepetitionsRequest = { type: 'conversation-repetitions'; requestId: number; id: string; timeZone: string; startDate?: string }
+type Request = ImportRequest | StatisticsRequest | DetailRequest | OutlineRequest | ContentRequest | RepetitionsRequest | ConversationRepetitionsRequest
 
 type Progress = { type: 'progress'; requestId: number; fileName: string; fileIndex: number; fileCount?: number; bytesRead: number; bytesTotal?: number; chats: number; skipped: number; archiveName?: string }
 type Complete = { type: 'complete'; requestId: number; local: AnalyticsStatistics; utc: AnalyticsStatistics; chats: number; skipped: number; durationMs: number; startDate?: string; sessionGapMinutes: number }
@@ -29,11 +33,14 @@ type Statistics = { type: 'statistics'; requestId: number; local: AnalyticsStati
 type Detail = { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }
 type Outline = { type: 'conversation-outline'; requestId: number; id: string; page: TurnPage }
 type Content = { type: 'message-content'; requestId: number; id: string; contents: MessageContent[] }
+type Repetitions = { type: 'repetitions'; requestId: number; analysis: RepeatedPhraseAnalysis }
+type ConversationRepetitions = { type: 'conversation-repetitions'; requestId: number; id: string; analysis: RepeatedPhraseAnalysis }
 type Failure = { type: 'failure'; requestId: number; operation: Request['type']; message: string }
 
 const worker = globalThis
 const retainedChats: Chat[] = []
 const retainedChatsById = new Map<string, Chat[]>()
+const repeatedPhraseCache = new Map<string, RepeatedPhraseAnalysis>()
 const MAX_ARCHIVE_EXTRACTED_BYTES = 1_000_000_000
 
 worker.addEventListener('message', (event: MessageEvent<Request>) => {
@@ -41,8 +48,10 @@ worker.addEventListener('message', (event: MessageEvent<Request>) => {
     const operation = request.type === 'import' ? importExport(request)
         : request.type === 'statistics' ? recalculateStatistics(request)
             : request.type === 'conversation-detail' ? loadConversationDetail(request)
-                : request.type === 'conversation-outline' ? loadConversationOutline(request)
-                    : loadMessageContents(request)
+                    : request.type === 'conversation-outline' ? loadConversationOutline(request)
+                    : request.type === 'message-content' ? loadMessageContents(request)
+                        : request.type === 'repetitions' ? loadRepeatedPhrases(request)
+                            : loadConversationRepeatedPhrases(request)
     void operation.catch(error => worker.postMessage({
         type: 'failure', requestId: request.requestId, operation: request.type,
         message: error instanceof Error ? error.message : String(error),
@@ -54,6 +63,7 @@ async function importExport(request: ImportRequest): Promise<void> {
     const startedAt = performance.now()
     retainedChats.length = 0
     retainedChatsById.clear()
+    repeatedPhraseCache.clear()
 
     if (request.source.kind === 'folder') await importFolder(request, request.source.files, state)
     else await importZip(request, request.source.archive, state)
@@ -194,6 +204,20 @@ async function loadMessageContents(request: ContentRequest): Promise<void> {
     worker.postMessage({ type: 'message-content', requestId: request.requestId, id: request.id, contents } satisfies Content)
 }
 
+async function loadRepeatedPhrases(request: RepetitionsRequest): Promise<void> {
+    const key = repetitionKey(request.timeZone, request.startDate)
+    const analysis = repeatedPhraseCache.get(key) ?? collectRepeatedPhrases(retainedChats, { timeZone: request.timeZone, startDate: request.startDate })
+    repeatedPhraseCache.set(key, analysis)
+    worker.postMessage({ type: 'repetitions', requestId: request.requestId, analysis } satisfies Repetitions)
+}
+
+async function loadConversationRepeatedPhrases(request: ConversationRepetitionsRequest): Promise<void> {
+    const key = `${request.id}\u0000${repetitionKey(request.timeZone, request.startDate)}`
+    const analysis = repeatedPhraseCache.get(key) ?? collectRepeatedPhrases(chatsFor(request.id), { timeZone: request.timeZone, startDate: request.startDate })
+    repeatedPhraseCache.set(key, analysis)
+    worker.postMessage({ type: 'conversation-repetitions', requestId: request.requestId, id: request.id, analysis } satisfies ConversationRepetitions)
+}
+
 function statisticsFor(request: SharedOptions): { local: AnalyticsStatistics; utc: AnalyticsStatistics } {
     return {
         local: collectAnalytics(retainedChats, analyticsOptions(request.localTimeZone, request.startDate, request.sessionGapMinutes)),
@@ -201,6 +225,7 @@ function statisticsFor(request: SharedOptions): { local: AnalyticsStatistics; ut
     }
 }
 function analyticsOptions(timeZone: string, startDate: string | undefined, sessionGapMinutes: number) { return { timeZone, startDate, sessionGapMinutes } }
+function repetitionKey(timeZone: string, startDate: string | undefined): string { return `${timeZone}\u0000${startDate ?? ''}` }
 function chatsFor(id: string): Chat[] { const chats = retainedChatsById.get(id); if (chats === undefined) throw new Error(`Conversation no longer exists in this browser session: ${id}`); return chats }
 function relativeName(file: File): string { return file.webkitRelativePath || file.name }
 function isConversationFile(name: string): boolean { return /^conversations(?:-[^/]+)?\.json$/i.test(name.slice(name.lastIndexOf('/') + 1)) }

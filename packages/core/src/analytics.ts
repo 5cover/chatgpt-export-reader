@@ -131,6 +131,18 @@ export type MessageContent = {
     body: string
 }
 
+export type RepeatedPhrase = {
+    phrase: string
+    occurrences: number
+    words: number
+    score: number
+}
+
+export type RepeatedPhraseAnalysis = {
+    user: RepeatedPhrase[]
+    assistant: RepeatedPhrase[]
+}
+
 type Event = {
     id: string
     order: number
@@ -200,6 +212,15 @@ export function getMessageContents(chats: Iterable<Chat>, options: AnalyticsOpti
     return collectEvents(chats, context)
         .filter(event => wanted.has(event.id))
         .map(event => ({ id: event.id, body: event.body }))
+}
+
+export function collectRepeatedPhrases(chats: Iterable<Chat>, options: AnalyticsOptions = {}): RepeatedPhraseAnalysis {
+    const context = createContext(options)
+    const events = sortEvents(collectEvents(chats, context))
+    return {
+        user: collectRolePhrases(events, 'user', context.segmenter),
+        assistant: collectRolePhrases(events, 'assistant', context.segmenter),
+    }
 }
 
 function aggregate(events: Event[], context: Context): AnalyticsStatistics {
@@ -311,6 +332,80 @@ function collectEvents(chats: Iterable<Chat>, context: Context): Event[] {
         }
     }
     return events
+}
+
+type SuffixState = { next: Map<number, number>; link: number; length: number; occurrences: number; end: number }
+
+function collectRolePhrases(events: readonly Event[], role: 'user' | 'assistant', segmenter: Intl.Segmenter): RepeatedPhrase[] {
+    const tokenIds = new Map<string, number>()
+    const words: string[] = []
+    const states: SuffixState[] = [{ next: new Map(), link: -1, length: 0, occurrences: 0, end: -1 }]
+
+    for (const event of events) {
+        if (event.role !== role) continue
+        let last = 0
+        for (const segment of segmenter.segment(event.body)) {
+            if (!segment.isWordLike) continue
+            const normalized = segment.segment.toLocaleLowerCase()
+            const token = tokenIds.get(normalized) ?? tokenIds.size
+            tokenIds.set(normalized, token)
+            words.push(segment.segment)
+            last = appendSuffixToken(states, last, token, words.length - 1)
+        }
+    }
+
+    const order = states.map((_, index) => index).sort((left, right) => states[right]!.length - states[left]!.length)
+    for (const index of order) {
+        const state = states[index]!
+        if (state.link >= 0) states[state.link]!.occurrences += state.occurrences
+    }
+
+    const phrases = new Map<string, RepeatedPhrase>()
+    for (const state of states) {
+        if (state.length < 2 || state.occurrences < 2 || state.end < state.length - 1) continue
+        const phrase = words.slice(state.end - state.length + 1, state.end + 1).join(' ')
+        const current = phrases.get(phrase)
+        const candidate = { phrase, occurrences: state.occurrences, words: state.length, score: state.occurrences * state.length }
+        if (current === undefined || candidate.score > current.score) phrases.set(phrase, candidate)
+    }
+    const ordered = [...phrases.values()]
+        .sort((left, right) => right.score - left.score || right.occurrences - left.occurrences || right.words - left.words || left.phrase.localeCompare(right.phrase))
+    const maximal: RepeatedPhrase[] = []
+    for (const candidate of ordered) {
+        if (maximal.some(phrase => phrase.occurrences === candidate.occurrences && containsPhrase(phrase.phrase, candidate.phrase))) continue
+        maximal.push(candidate)
+        if (maximal.length === 500) break
+    }
+    return maximal
+}
+
+function appendSuffixToken(states: SuffixState[], last: number, token: number, end: number): number {
+    const current = states.length
+    states.push({ next: new Map(), link: 0, length: states[last]!.length + 1, occurrences: 1, end })
+    let parent = last
+    while (parent >= 0 && !states[parent]!.next.has(token)) {
+        states[parent]!.next.set(token, current)
+        parent = states[parent]!.link
+    }
+    if (parent < 0) return current
+    const existing = states[parent]!.next.get(token)!
+    if (states[parent]!.length + 1 === states[existing]!.length) {
+        states[current]!.link = existing
+        return current
+    }
+    const clone = states.length
+    states.push({ next: new Map(states[existing]!.next), link: states[existing]!.link, length: states[parent]!.length + 1, occurrences: 0, end: states[existing]!.end })
+    while (parent >= 0 && states[parent]!.next.get(token) === existing) {
+        states[parent]!.next.set(token, clone)
+        parent = states[parent]!.link
+    }
+    states[existing]!.link = clone
+    states[current]!.link = clone
+    return current
+}
+
+function containsPhrase(container: string, contained: string): boolean {
+    return ` ${container.toLocaleLowerCase()} `.includes(` ${contained.toLocaleLowerCase()} `)
 }
 
 function includeMessage(message: Message, context: Context): boolean {

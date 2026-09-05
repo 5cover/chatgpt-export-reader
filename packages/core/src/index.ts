@@ -3,6 +3,7 @@ export { extractV1UsageConversation, isEmptyV1Record, normalizeV1Chat } from './
 export {
     collectAnalytics,
     collectConversationDetail,
+    collectRepeatedPhrases,
     findConversationTurns,
     getMessageContents,
     type AnalyticsDay,
@@ -13,6 +14,8 @@ export {
     type ConversationDetail,
     type DayConversation,
     type MessageContent,
+    type RepeatedPhrase,
+    type RepeatedPhraseAnalysis,
     type SessionAnalytics,
     type TemporalCell,
     type TextMetrics,
