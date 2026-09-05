@@ -620,35 +620,73 @@ td a,
 .two-up .chart-card {
   min-width: 0;
 }
-.calendar-heatmap {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14px, 1fr));
-  gap: 4px;
+.heatmap-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
 }
-.calendar-heatmap span {
-  aspect-ratio: 1;
-  min-width: 0;
-  background: #0b7773;
+.heatmap-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 3px;
+  table-layout: fixed;
+  text-align: center;
 }
-.hour-heatmap {
-  display: grid;
-  grid-template-columns: repeat(24, minmax(0, 1fr));
-  gap: 4px;
+.heatmap-table th {
+  min-width: 3.2rem;
+  padding: 7px 5px;
+  border: 0;
+  white-space: nowrap;
 }
-.hour-heatmap button {
-  aspect-ratio: 1.15;
-  min-width: 0;
+.heatmap-table th[scope='row'],
+.heatmap-table .heatmap-corner {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 6.5rem;
+  background: #f7faf8;
+  text-align: left;
+}
+.heatmap-table td {
+  position: relative;
+  min-width: 3.2rem;
   padding: 0;
   border: 0;
-  background: #d36c37;
+  color: var(--heatmap-foreground);
+  isolation: isolate;
+}
+.heatmap-cell::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: var(--heatmap-color);
+  content: '';
+  opacity: var(--heatmap-opacity);
+}
+.heatmap-cell > span,
+.heatmap-cell > a {
+  display: block;
+  padding: 9px 6px;
+  color: inherit;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-decoration: none;
+  user-select: text;
+}
+.heatmap-cell > a {
   cursor: pointer;
 }
-.hour-heatmap button:focus-visible {
+.heatmap-cell > a:hover {
   outline: 2px solid #1d5d59;
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
-.hour-heatmap button:disabled {
-  cursor: default;
+.heatmap-cell > a:focus-visible {
+  outline: 3px solid #1d5d59;
+  outline-offset: -3px;
+}
+.heatmap-empty {
+  background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(89, 112, 116, 0.08) 4px 5px);
 }
 .time-heading {
   padding: 26px 28px;
@@ -1075,11 +1113,8 @@ td a,
   }
 }
 @media (max-width: 700px) {
-  .hour-heatmap {
-    gap: 2px;
-  }
-  .calendar-heatmap {
-    grid-template-columns: repeat(20, 1fr);
+  .heatmap-table {
+    border-spacing: 2px;
   }
   .metric-picker {
     align-items: start;

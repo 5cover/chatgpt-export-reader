@@ -17,6 +17,7 @@ import type {
   TextMetrics,
 } from '@chatgpt-export-reader/core'
 import { DailyChart, type DailyMetric, metricLabel, metricValue } from './daily-chart.js'
+import { HeatmapTable, type HeatmapRow } from './heatmap-table.js'
 import { PromptHistogram } from './prompt-histogram.js'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
 
@@ -701,13 +702,7 @@ function Patterns({ stats, zone }: { stats: AnalyticsStatistics; zone: TimeZoneM
             </button>
           ))}
         </section>
-        <HourHeatmap
-          cells={stats.hours}
-          metric={metric}
-          onSelect={filter => {
-            location.hash = temporalRoute(filter)
-          }}
-        />
+        <HourHeatmap cells={stats.hours} metric={metric} />
       </Accordion>
       <Accordion title="Session profile" description="Compare session size and start times.">
         <section class="two-up">
@@ -1256,7 +1251,9 @@ function Concentration({ conversations }: { conversations: readonly Conversation
   )
 }
 function CalendarHeatmap({ days, metric }: { days: readonly AnalyticsDay[]; metric: DailyMetric }) {
-  const max = Math.max(...days.map(day => metricValue(day, metric)), 1)
+  const columns = Array.from({ length: 31 }, (_, index) => String(index + 1))
+  const rows = calendarHeatmapRows(days, metric)
+  const label = metricLabel(metric).toLocaleLowerCase()
   return (
     <section class="chart-card">
       <div class="chart-heading">
@@ -1265,30 +1262,51 @@ function CalendarHeatmap({ days, metric }: { days: readonly AnalyticsDay[]; metr
           <h2>Daily {metricLabel(metric).toLocaleLowerCase()} at a glance.</h2>
         </div>
       </div>
-      <div class="calendar-heatmap">
-        {days.map(day => (
-          <span
-            title={`${day.date}: ${metricValue(day, metric).toLocaleString()} ${metricLabel(metric).toLocaleLowerCase()}`}
-            style={{ opacity: `${heatmapOpacity(metricValue(day, metric), max, 0.12)}` }}
-          />
-        ))}
-      </div>
-      <p class="chart-note">Each cell is one calendar day, including inactive days.</p>
+      <HeatmapTable
+        label={`Daily ${label} by month`}
+        cornerLabel="Month / day"
+        columns={columns}
+        rows={rows}
+        color="#0b7773"
+        minimumOpacity={0.12}
+      />
+      <p class="chart-note">
+        Rows are months; columns are calendar days. Inactive days are shown as 0. Select the table to copy its headers
+        and values.
+      </p>
     </section>
   )
 }
 function HourHeatmap({
   cells,
   metric,
-  onSelect,
 }: {
   cells: readonly { weekday: number; hour: number; prompts: number; input: TextMetrics; output: TextMetrics }[]
   metric: 'prompts' | 'input' | 'output'
-  onSelect: (filter: TemporalMessageFilter) => void
 }) {
   const value = (cell: (typeof cells)[number]) => (metric === 'prompts' ? cell.prompts : cell[metric].words)
-  const max = Math.max(...cells.map(value), 1)
   const label = metric === 'prompts' ? 'prompts' : `${metric} words`
+  const byPosition = new Map(cells.map(cell => [`${cell.weekday}:${cell.hour}`, cell]))
+  const rows: HeatmapRow[] = Array.from({ length: 7 }, (_, weekday) => ({
+    key: String(weekday),
+    label: weekdayName(weekday, 'short'),
+    cells: Array.from({ length: 24 }, (_, hour) => {
+      const cell = byPosition.get(`${weekday}:${hour}`)
+      const count = cell === undefined ? 0 : value(cell)
+      const title = `${weekdayName(weekday, 'short')} ${hourLabel(hour)}: ${count.toLocaleString()} ${label}`
+      const filter: TemporalMessageFilter = {
+        role: metric === 'output' ? 'assistant' : 'user',
+        weekday,
+        hour,
+      }
+      return {
+        value: count,
+        title,
+        href: count === 0 ? undefined : temporalRoute(filter),
+        actionLabel: `${title}. Explore messages.`,
+      }
+    }),
+  }))
   return (
     <section class="chart-card">
       <div class="chart-heading">
@@ -1297,27 +1315,16 @@ function HourHeatmap({
           <h2>When {label} happen.</h2>
         </div>
       </div>
-      <div class="hour-heatmap">
-        {cells.map(cell => {
-          const count = value(cell)
-          const title = `${weekdayName(cell.weekday, 'short')} ${hourLabel(cell.hour)}: ${count.toLocaleString()} ${label}`
-          return (
-            <button
-              type="button"
-              title={title}
-              aria-label={`${title}. Explore messages.`}
-              disabled={count === 0}
-              onClick={() =>
-                onSelect({ role: metric === 'output' ? 'assistant' : 'user', weekday: cell.weekday, hour: cell.hour })
-              }
-              style={{ opacity: `${heatmapOpacity(count, max, 0.1)}` }}
-            />
-          )
-        })}
-      </div>
+      <HeatmapTable
+        label={`${label} by weekday and hour`}
+        cornerLabel="Day / hour"
+        columns={Array.from({ length: 24 }, (_, hour) => hourLabel(hour))}
+        rows={rows}
+        color="#d36c37"
+      />
       <p class="chart-note">
         Rows run Sunday to Saturday; columns run 00:00 to 23:00 in the selected timezone. Select a cell to inspect its
-        messages.
+        messages, or select the table to copy its headers and values.
       </p>
     </section>
   )
@@ -1658,8 +1665,23 @@ function formatDuration(value: number): string {
   const hours = Math.floor(minutes / 60)
   return hours ? `${hours}h ${minutes % 60}m` : `${minutes}m`
 }
-function heatmapOpacity(value: number, maximum: number, minimum: number): number {
-  return value === 0 ? 0 : minimum + ((1 - minimum) * value) / maximum
+function calendarHeatmapRows(days: readonly AnalyticsDay[], metric: DailyMetric): HeatmapRow[] {
+  const rows = new Map<string, { key: string; label: string; cells: (HeatmapRow['cells'][number] | undefined)[] }>()
+  for (const day of days) {
+    const month = day.date.slice(0, 7)
+    let row = rows.get(month)
+    if (row === undefined) {
+      row = { key: month, label: month, cells: Array.from({ length: 31 }) }
+      rows.set(month, row)
+    }
+    const value = metricValue(day, metric)
+    const dayOfMonth = Number(day.date.slice(8, 10))
+    row.cells[dayOfMonth - 1] = {
+      value,
+      title: `${day.date}: ${value.toLocaleString()} ${metricLabel(metric).toLocaleLowerCase()}`,
+    }
+  }
+  return [...rows.values()]
 }
 function phrasePreview(phrase: string): string {
   const compact = phrase.replace(/\s+/g, ' ').trim()
