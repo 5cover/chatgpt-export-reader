@@ -12,7 +12,8 @@
   ],
   "scripts": {
     "build": "tsc --incremental",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "pnpm build && node --test test/*.test.mjs"
   },
   "license": "MIT",
   "dependencies": {

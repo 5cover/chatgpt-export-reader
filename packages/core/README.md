@@ -35,6 +35,8 @@ const analytics = collectAnalytics(chats, {
 });
 ```
 
+`endDate` is also inclusive. Analytics validates both calendar dates and rejects a reversed range.
+
 Use `collectTemporalMessageSlice` to inspect the user or assistant messages behind a weekday-hour aggregate. Omit `weekday` to match that hour on every day. The result includes conversation rollups and matching message evidence; paginate the `messages` array before sending large slices across a process or Worker boundary.
 
 ```ts
@@ -46,3 +48,23 @@ const slice = collectTemporalMessageSlice(
   { role: "user", weekday: 0, hour: 4 },
 );
 ```
+
+## Recaps
+
+`buildRecap` creates a portable evidence document for an LLM recap. It keeps the selected range separate from optional preceding context, so its analytics never include context messages.
+
+```ts
+import { buildRecap, createRecapPrompt, serializeRecapYaml } from "@chatgpt-export-reader/core";
+
+const recap = buildRecap(chats, {
+  timeZone: "Europe/Paris",
+  startDate: "2026-01-01",
+  endDate: "2026-03-31",
+  context: { strategy: "rolling-window", maxMessages: 20 },
+});
+
+const contextYaml = serializeRecapYaml(recap);
+const prompt = createRecapPrompt("reflective");
+```
+
+Use `context.strategy: "full"` when every earlier timestamped message in each included conversation is needed. The default `rolling-window` mode preserves the beginning and the messages immediately before the range, with explicit omission markers. Untimestamped messages are not placed in recap evidence and are counted in each conversation's metadata.

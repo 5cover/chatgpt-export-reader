@@ -8,6 +8,7 @@ export type TextMetrics = {
 export type AnalyticsOptions = {
   timeZone?: string;
   startDate?: string;
+  endDate?: string;
   sessionGapMinutes?: number;
 };
 
@@ -656,10 +657,13 @@ function containsPhrase(container: string, contained: string): boolean {
 }
 
 function includeMessage(message: Message, context: Context): boolean {
-  if (context.startDate === undefined) return true;
+  if (context.startDate === undefined && context.endDate === undefined)
+    return true;
+  if (message.createTime === undefined) return false;
+  const date = context.dayKey(message.createTime);
   return (
-    message.createTime !== undefined &&
-    context.dayKey(message.createTime) >= context.startDate
+    (context.startDate === undefined || date >= context.startDate) &&
+    (context.endDate === undefined || date <= context.endDate)
   );
 }
 
@@ -803,7 +807,13 @@ function createContext(options: AnalyticsOptions): Context {
   const startDate =
     options.startDate === undefined
       ? undefined
-      : validateStartDate(options.startDate);
+      : validateDate(options.startDate, "start");
+  const endDate =
+    options.endDate === undefined
+      ? undefined
+      : validateDate(options.endDate, "end");
+  if (startDate !== undefined && endDate !== undefined && startDate > endDate)
+    throw new RangeError("startDate must be on or before endDate.");
   const sessionGapMinutes = options.sessionGapMinutes ?? 60;
   if (
     !Number.isFinite(sessionGapMinutes) ||
@@ -826,6 +836,7 @@ function createContext(options: AnalyticsOptions): Context {
   const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
   return {
     startDate,
+    endDate,
     sessionGapMs: sessionGapMinutes * 60_000,
     segmenter,
     dayKey(timestamp) {
@@ -854,6 +865,7 @@ function createContext(options: AnalyticsOptions): Context {
 
 type Context = {
   startDate?: string;
+  endDate?: string;
   sessionGapMs: number;
   segmenter: Intl.Segmenter;
   dayKey: (timestamp: number) => string;
@@ -994,10 +1006,10 @@ function* walkMessages(roots: readonly Message[]): Generator<Message> {
       stack.push(message.children[i]!);
   }
 }
-function validateStartDate(value: string): string {
+function validateDate(value: string, kind: "start" | "end"): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (match === null)
-    throw new RangeError(`Invalid start date: ${value}. Expected YYYY-MM-DD.`);
+    throw new RangeError(`Invalid ${kind} date: ${value}. Expected YYYY-MM-DD.`);
   const [, yearText, monthText, dayText] = match;
   const year = Number(yearText);
   const month = Number(monthText);
@@ -1010,7 +1022,7 @@ function validateStartDate(value: string): string {
     date.getUTCDate() !== day
   )
     throw new RangeError(
-      `Invalid start date: ${value}. Expected a real calendar date.`,
+      `Invalid ${kind} date: ${value}. Expected a real calendar date.`,
     );
   return value;
 }

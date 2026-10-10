@@ -266,6 +266,9 @@ importers:
 
   packages/core:
     dependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -2213,6 +2216,14 @@ packages:
         integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==,
       }
 
+  yaml@2.9.1:
+    resolution:
+      {
+        integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==,
+      }
+    engines: { node: ">= 14.6" }
+    hasBin: true
+
   yocto-queue@0.1.0:
     resolution:
       {
@@ -3436,6 +3447,8 @@ snapshots:
   word-wrap@1.2.5: {}
 
   yallist@3.1.1: {}
+
+  yaml@2.9.1: {}
 
   yocto-queue@0.1.0: {}
 

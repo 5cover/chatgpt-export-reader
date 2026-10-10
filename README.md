@@ -13,6 +13,26 @@ node packages/cli/dist/cli.js conversations.json --output-format stats --export-
 
 The report contains `stats.json`, CSV tables for daily and role counts, and an SVG line chart of daily message and user-prompt activity. Daily data uses UTC and includes every calendar day from the first timestamped message to the last.
 
+## Conversation recap
+
+Generate two editable recap artifacts from a filesystem export: `recap-context.yaml` contains the selected evidence and computed statistics, while `recap-prompt.md` contains the prompt for a consuming model.
+
+```sh
+pnpm build
+node packages/cli/dist/cli.js exports/conversations.json \
+  --output-format recap \
+  --export-format filesystem \
+  --fs-path out/recap \
+  --time-zone Europe/Paris \
+  --start-date 2026-01-01 \
+  --end-date 2026-03-31 \
+  --context-strategy rolling-window \
+  --context-messages 20 \
+  --recap-style reflective
+```
+
+`--context-strategy full` includes all preceding timestamped messages for each included conversation. `rolling-window` is the default and includes a per-conversation budget split between the start of the conversation and messages directly before the selected range. Prompt styles are `narrative`, `reflective`, and `playful`.
+
 ## Usage dashboard
 
 The browser dashboard is a local-only companion for investigating usage spikes. It accepts the folder extracted from a ChatGPT export, discovers every `conversations*.json` file, and processes it in a Web Worker. Raw export data is never uploaded or persisted by the site.

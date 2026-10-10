@@ -34,6 +34,20 @@ export {
   type TurnPage,
 } from "./analytics.js";
 export {
+  buildRecap,
+  createRecapPrompt,
+  serializeRecapYaml,
+  type Distribution,
+  type RecapContextStrategy,
+  type RecapConversationEvidence,
+  type RecapDerivedMetrics,
+  type RecapDocument,
+  type RecapMessage,
+  type RecapOmission,
+  type RecapOptions,
+  type RecapPromptStyle,
+} from "./recap.js";
+export {
   collectUsageStatistics,
   UsageStatsAccumulator,
   type UsageConversation,

@@ -1,4 +1,8 @@
 import { Command } from "@commander-js/extra-typings";
+import type {
+  RecapContextStrategy,
+  RecapPromptStyle,
+} from "@chatgpt-export-reader/core";
 import { createWriteStream } from "fs";
 import { stat } from "fs/promises";
 import { stdout } from "process";
@@ -12,6 +16,7 @@ import JsonArtifactExporter from "./output/exporters/json.js";
 import JsonOutput from "./output/formats/json.js";
 import MarkdownOutput from "./output/formats/markdown.js";
 import PromptOutput from "./output/formats/prompt.js";
+import RecapOutput from "./output/formats/recap.js";
 import StatsOutput from "./output/formats/stats.js";
 
 const inputFormats = [
@@ -48,11 +53,40 @@ const outputFormats = [
     desc: "Generate usage statistics as JSON, CSV, and SVG chart artifacts.",
     create: () => new StatsOutput(),
   },
+  {
+    name: "recap",
+    desc: "Generate editable recap evidence YAML and an LLM prompt.",
+    create: (options) =>
+      new RecapOutput({
+        timeZone: options.timeZone,
+        startDate: options.startDate,
+        endDate: options.endDate,
+        sessionGapMinutes: numberOption(
+          options.sessionGapMinutes,
+          "--session-gap-minutes",
+        ),
+        context: {
+          strategy: recapStrategy(options.contextStrategy),
+          maxMessages: recapContextMessages(options.contextMessages),
+        },
+        promptStyle: recapStyle(options.recapStyle),
+      }),
+  },
 ] as const satisfies readonly {
   name: string;
   desc: string;
-  create: () => OutputFormat;
+  create: (options: OutputOptions) => OutputFormat;
 }[];
+
+type OutputOptions = {
+  timeZone?: string;
+  startDate?: string;
+  endDate?: string;
+  sessionGapMinutes?: string;
+  contextStrategy?: string;
+  contextMessages?: string;
+  recapStyle?: string;
+};
 
 const exportFormats = [
   {
@@ -101,6 +135,13 @@ program
     [] as string[],
   )
   .option("--fs-path <path>", "Filesystem exporter destination path")
+  .option("--start-date <YYYY-MM-DD>", "Inclusive recap start date in the selected timezone")
+  .option("--end-date <YYYY-MM-DD>", "Inclusive recap end date in the selected timezone")
+  .option("--time-zone <iana-zone>", "Recap timezone", "UTC")
+  .option("--session-gap-minutes <number>", "Minutes separating observed recap sessions")
+  .option("--context-strategy <full|rolling-window>", "Pre-window context strategy", "rolling-window")
+  .option("--context-messages <number>", "Maximum preceding messages per conversation", "20")
+  .option("--recap-style <name>", "Prompt style: narrative, reflective, or playful", "narrative")
   .option(
     "--stream-file <path|->",
     "Stream exporter destination, use - for stdout",
@@ -126,7 +167,7 @@ program
       );
 
     const inputF = getInputFormat(options.inputFormat);
-    const outputF = getOutputFormat(options.outputFormat);
+    const outputF = getOutputFormat(options.outputFormat, options);
     const exportF = createExporter(options.exportFormat, {
       fsPath: options.fsPath,
       streamFile: options.streamFile,
@@ -150,10 +191,10 @@ function getInputFormat(name: string): Input {
   return format.input;
 }
 
-function getOutputFormat(name: string): OutputFormat {
+function getOutputFormat(name: string, options?: OutputOptions): OutputFormat {
   const format = outputFormats.find((format) => format.name === name);
   if (!format) throw new Error(`unknown output format: ${name}`);
-  return format.create();
+  return format.create(options ?? {});
 }
 
 function createExporter(
@@ -195,6 +236,38 @@ function openStream(path: string): Writable {
 function collect(value: string, previous: string[]) {
   previous.push(value);
   return previous;
+}
+
+function numberOption(value: string | undefined, option: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value))
+    throw new Error(`${option} must be a number.`);
+  return Number(value);
+}
+
+function recapStrategy(value: string | undefined): RecapContextStrategy | undefined {
+  if (value === undefined || value === "full" || value === "rolling-window")
+    return value;
+  throw new Error(`unknown context strategy: ${value}`);
+}
+
+function recapStyle(value: string | undefined): RecapPromptStyle | undefined {
+  if (
+    value === undefined ||
+    value === "narrative" ||
+    value === "reflective" ||
+    value === "playful"
+  )
+    return value;
+  throw new Error(`unknown recap style: ${value}`);
+}
+
+function recapContextMessages(value: string | undefined): number | undefined {
+  const number = numberOption(value, "--context-messages");
+  if (number === undefined) return undefined;
+  if (!Number.isInteger(number) || number < 0)
+    throw new Error("--context-messages must be a non-negative integer.");
+  return number;
 }
 
 function printFormats(
