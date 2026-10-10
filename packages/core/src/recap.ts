@@ -12,7 +12,7 @@ import {
   type AnalyticsDerivedMetrics,
   type Distribution,
 } from "./derived-metrics.js";
-import type { Chat, Message, Thought } from "./types.js";
+import type { Chat, Message } from "./types.js";
 
 export type RecapContextStrategy = "full" | "rolling-window";
 export type RecapPromptStyle = "narrative" | "reflective" | "playful";
@@ -26,17 +26,16 @@ export type RecapOptions = AnalyticsOptions & {
 };
 
 export type RecapMessage = {
-  kind: "message";
   id: string;
   parentId: string;
   branchPath: string;
   role: string;
-  timestamp: string;
+  at: string;
   text: string;
   textMetrics: TextMetrics;
-  model: string;
-  weight: number;
-  thoughts: Thought[];
+  model?: string;
+  weight?: number;
+  thoughts?: Message["thoughts"];
 };
 
 export type RecapOmission = {
@@ -142,7 +141,7 @@ export function buildRecap(
 }
 
 export function serializeRecapYaml(document: RecapDocument): string {
-  const yaml = stringify(normalizeNulls(document), {
+  const yaml = stringify(compactForYaml(document), {
     indent: 1,
     lineWidth: 0,
     blockQuote: true,
@@ -226,17 +225,18 @@ function rollingWindow(
 function recapMessage(entry: FlatMessage, timeZone = "UTC"): RecapMessage {
   const message = entry.message;
   return {
-    kind: "message",
     id: message.id,
     parentId: entry.parentId,
     branchPath: entry.branchPath,
     role: message.role,
-    timestamp: message.createTime === undefined ? "" : formatLocalTimestamp(message.createTime, timeZone),
+    at: message.createTime === undefined ? "" : formatLocalTimestamp(message.createTime, timeZone),
     text: message.body,
     textMetrics: textMetrics(message.body),
-    model: message.model ?? "",
-    weight: message.weight,
-    thoughts: message.thoughts ?? [],
+    ...(message.model === undefined || message.model === "" ? {} : { model: message.model }),
+    ...(message.weight === 1 ? {} : { weight: message.weight }),
+    ...(message.thoughts === undefined || message.thoughts.length === 0
+      ? {}
+      : { thoughts: message.thoughts }),
   };
 }
 
@@ -303,10 +303,72 @@ function parts(timestamp: number, timeZone: string): Record<string, string> {
       .map((part) => [part.type, part.value]),
   );
 }
-function normalizeNulls(value: unknown): unknown {
+/**
+ * Allocates compact, document-local IDs while retaining repeated-reference
+ * semantics. Source GUIDs are globally unique in the emitted document, so one
+ * map keeps every reference short.
+ */
+class RecapIdGenerator {
+  readonly seen = new Map<string, number>();
+
+  id(guid: string): number {
+    const existing = this.seen.get(guid);
+    if (existing !== undefined) return existing;
+    const value = this.seen.size + 1;
+    this.seen.set(guid, value);
+    return value;
+  }
+}
+
+type YamlTextMetrics = { wc: string };
+
+function compactForYaml(document: RecapDocument): unknown {
+  const ids = new RecapIdGenerator();
+  for (const conversation of document.conversations) {
+    ids.id(conversation.id);
+    for (const item of [...conversation.preWindowContext, ...conversation.messages]) {
+      if ("skippedMessages" in item) continue;
+      ids.id(item.id);
+    }
+  }
+  return compactValue(document, ids);
+}
+
+function compactValue(value: unknown, ids: RecapIdGenerator): unknown {
+  if (isTextMetrics(value)) return { wc: `${value.words} ${value.characters}` } satisfies YamlTextMetrics;
+  if (Array.isArray(value)) return value.map((item) => compactValue(item, ids));
   if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) return value.map(normalizeNulls);
-  if (typeof value === "object")
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, normalizeNulls(child)]));
-  return value;
+  if (typeof value !== "object") return value;
+
+  const compacted: Record<string, unknown> = {};
+  for (const [childKey, childValue] of Object.entries(value)) {
+    if (childKey === "kind" && childValue === "message") continue;
+    if (childKey === "model" && (childValue === "" || childValue === undefined)) continue;
+    if (childKey === "weight" && childValue === 1) continue;
+    if (childKey === "thoughts" && Array.isArray(childValue) && childValue.length === 0) continue;
+    if (childKey === "textMetrics" && isTextMetrics(childValue)) {
+      compacted.wc = `${childValue.words} ${childValue.characters}`;
+      continue;
+    }
+    if (isIdentifierKey(childKey) && typeof childValue === "string" && childValue !== "") {
+      compacted[childKey] = ids.id(childValue);
+      continue;
+    }
+    compacted[childKey] = compactValue(childValue, ids);
+  }
+  return compacted;
+}
+
+function isTextMetrics(value: unknown): value is TextMetrics {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    Object.keys(record).length === 2 &&
+    typeof record.characters === "number" &&
+    typeof record.words === "number"
+  );
+}
+
+function isIdentifierKey(key: string): key is "id" | "parentId" | "conversationId" {
+  return key === "id" || key === "parentId" || key === "conversationId";
 }

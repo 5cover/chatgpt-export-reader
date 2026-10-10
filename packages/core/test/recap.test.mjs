@@ -113,7 +113,7 @@ test("rolling context preserves branches, applies independent budgets, and marks
   assert.equal(two.preWindowContext.length, 1);
 });
 
-test("YAML is parseable, timestamped locally, and prompt styles remain separate", () => {
+test("YAML is compact, parseable, timestamped locally, and prompt styles remain separate", () => {
   const source = [chat("one", [message("one", "assistant", "first line\nsecond line", Date.UTC(2026, 9, 11, 8, 30))])];
   source[0].messages[0].thoughts = [{ summary: "plan", content: "reasoning", chunks: ["reasoning"] }];
   const recap = buildRecap(source, { timeZone: "Europe/Paris" });
@@ -122,7 +122,35 @@ test("YAML is parseable, timestamped locally, and prompt styles remain separate"
   assert.equal(parsed.schema, "chatgpt-export-reader/recap/v1");
   assert.match(yaml, /text: \|-\n/);
   assert.match(yaml, /sun 2026-10-11T10:30\+02:00/);
+  assert.match(yaml, /wc: 4 22/);
+  assert.equal(typeof parsed.conversations[0].id, "number");
+  assert.equal(typeof parsed.conversations[0].messages[0].id, "number");
+  assert.equal(parsed.conversations[0].messages[0].at, "sun 2026-10-11T10:30+02:00");
+  assert.equal("timestamp" in parsed.conversations[0].messages[0], false);
+  assert.equal("textMetrics" in parsed.conversations[0].messages[0], false);
+  assert.equal("weight" in parsed.conversations[0].messages[0], false);
+  assert.equal("kind" in parsed.conversations[0].messages[0], false);
+  assert.equal("model" in parsed.conversations[0].messages[0], false);
+  assert.ok(parsed.conversations[0].messages[0].thoughts);
   assert.equal(yaml.includes("null"), false);
   assert.match(createRecapPrompt("playful"), /awards-and-highlights/);
   assert.throws(() => createRecapPrompt("unknown"), /unknown recap prompt style/);
+});
+
+test("compact YAML IDs are numeric and retain message parent references", () => {
+  const root = message("message-guid-root-0123456789", "user", "parent", at(1), [
+    message("message-guid-child-0123456789", "assistant", "child", at(1, 1)),
+  ]);
+  const source = [chat("conversation-guid-0123456789", [root])];
+  source[0].title = "Example conversation";
+  const yaml = serializeRecapYaml(buildRecap(source));
+  const parsed = parse(yaml);
+  const [parent, child] = parsed.conversations[0].messages;
+
+  assert.equal(typeof parent.id, "number");
+  assert.equal(typeof child.id, "number");
+  assert.equal(child.parentId, parent.id);
+  assert.equal(typeof parsed.analytics.conversations[0].id, "number");
+  assert.equal(yaml.includes("message-guid-root-0123456789"), false);
+  assert.equal(yaml.includes("conversation-guid-0123456789"), false);
 });

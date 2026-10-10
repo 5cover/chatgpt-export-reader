@@ -76,3 +76,5 @@ const prompt = createRecapPrompt("reflective");
 ```
 
 Use `context.strategy: "full"` when every earlier timestamped message in each included conversation is needed. The default `rolling-window` mode preserves the beginning and the messages immediately before the range, with explicit omission markers. Untimestamped messages are not placed in recap evidence and are counted in each conversation's metadata.
+
+`serializeRecapYaml` compacts the transport format without changing the in-memory analytics API: text totals use `wc: words characters`, ordinary message timestamps use `at`, and document-local numeric IDs replace source GUIDs consistently across references. Default message values such as `weight: 1` and empty models or thought lists are omitted.
