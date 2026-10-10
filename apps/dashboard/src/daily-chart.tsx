@@ -1,24 +1,24 @@
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { useEffect, useRef } from 'preact/hooks'
-import type { AnalyticsDay } from '@chatgpt-export-reader/core'
+import { dailyMetricValue, type AnalyticsDay, type DailyMetric, type Distribution } from '@chatgpt-export-reader/core'
 
 export type DailyChartProps = {
   days: readonly AnalyticsDay[]
   selectedDate?: string
   onSelectDate: (date: string) => void
   metric: DailyMetric
+  distribution: Distribution
   title?: string
   note?: string
 }
-
-export type DailyMetric = 'prompts' | 'messages' | 'inputWords' | 'outputWords' | 'totalWords'
 
 export function DailyChart({
   days,
   selectedDate,
   onSelectDate,
   metric,
+  distribution,
   title = 'How usage changes over time.',
   note = 'Click a day to inspect the conversations behind it. Drag to zoom; double-click to reset.',
 }: DailyChartProps) {
@@ -93,8 +93,8 @@ export function DailyChart({
       <div class="chart" ref={target} />
       <p class="chart-note">{note}</p>
       <p class="chart-summary">
-        Per calendar day: <strong>mean {mean(days.map(day => metricValue(day, metric))).toFixed(1)}</strong> ·{' '}
-        <strong>median {median(days.map(day => metricValue(day, metric))).toFixed(1)}</strong>
+        Per calendar day: <strong>mean {distribution.mean.toFixed(1)}</strong> ·{' '}
+        <strong>median {distribution.median.toFixed(1)}</strong>
       </p>
     </section>
   )
@@ -109,13 +109,9 @@ function rollingMean(values: readonly number[], width: number): number[] {
   })
 }
 
-export function metricValue(day: AnalyticsDay, metric: DailyMetric): number {
-  if (metric === 'prompts') return day.prompts
-  if (metric === 'messages') return day.messages
-  if (metric === 'inputWords') return day.input.words
-  if (metric === 'outputWords') return day.output.words
-  return day.input.words + day.output.words
-}
+export type { DailyMetric } from '@chatgpt-export-reader/core'
+
+export const metricValue = dailyMetricValue
 
 export function metricLabel(metric: DailyMetric): string {
   return {
@@ -125,15 +121,4 @@ export function metricLabel(metric: DailyMetric): string {
     outputWords: 'Output words',
     totalWords: 'Total words',
   }[metric]
-}
-
-function mean(values: readonly number[]): number {
-  return values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length
-}
-
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
 }

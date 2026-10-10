@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type {
+  AnalyticsDerivedMetrics,
   AnalyticsDay,
   AnalyticsStatistics,
   ConversationAnalytics,
@@ -16,6 +17,7 @@ import type {
   TurnPage,
   TextMetrics,
 } from '@chatgpt-export-reader/core'
+import { deriveAnalyticsMetrics } from '@chatgpt-export-reader/core'
 import { DailyChart, type DailyMetric, metricLabel, metricValue } from './daily-chart.js'
 import { HeatmapTable, type HeatmapRow } from './heatmap-table.js'
 import { PromptHistogram } from './prompt-histogram.js'
@@ -454,9 +456,14 @@ export function App() {
             />
           )}
           {visibleRoute.page === 'overview' && (
-            <Overview stats={stats} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+            <Overview
+              stats={stats}
+              timeZone={selectedTimeZone(zone)}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+            />
           )}
-          {visibleRoute.page === 'patterns' && <Patterns stats={stats} zone={zone} />}
+          {visibleRoute.page === 'patterns' && <Patterns stats={stats} timeZone={selectedTimeZone(zone)} />}
           {visibleRoute.page === 'time' && (
             <TemporalView
               route={visibleRoute}
@@ -623,14 +630,17 @@ function Accordion({
 }
 function Overview({
   stats,
+  timeZone,
   selectedDate,
   onSelectDate,
 }: {
   stats: AnalyticsStatistics
+  timeZone: string
   selectedDate?: string
   onSelectDate: (date: string) => void
 }) {
   const [metric, setMetric] = useState<DailyMetric>('prompts')
+  const metrics = useMemo(() => deriveAnalyticsMetrics(stats, { timeZone }), [stats, timeZone])
   const selected = stats.days.find(day => day.date === selectedDate)
   return (
     <>
@@ -642,7 +652,7 @@ function Overview({
         <Metric label="Output words" value={stats.summary.output.words} />
         <Metric label="Input characters" value={stats.summary.input.characters} />
         <Metric label="Output characters" value={stats.summary.output.characters} />
-        <Metric label="Output / input" value={ratio(stats.summary.output, stats.summary.input)} />
+        <Metric label="Output / input" value={formatRatio(metrics.outputToInputWordRatio)} />
       </section>
       <Accordion title="Activity over time" description="Compare daily message and text volume." defaultOpen>
         <section class="metric-picker">
@@ -653,12 +663,18 @@ function Overview({
             </button>
           ))}
         </section>
-        <DailyChart days={stats.days} metric={metric} selectedDate={selectedDate} onSelectDate={onSelectDate} />
+        <DailyChart
+          days={stats.days}
+          metric={metric}
+          distribution={metrics.daily[metric]}
+          selectedDate={selectedDate}
+          onSelectDate={onSelectDate}
+        />
       </Accordion>
       <Accordion title="Calendar and distribution" description="See active days and the range of daily prompt counts.">
         <section class="two-up">
           <CalendarHeatmap days={stats.days} metric={metric} />
-          <PromptHistogram days={stats.days} />
+          <PromptHistogram bins={metrics.promptDistribution} />
         </section>
       </Accordion>
       {selected && (
@@ -669,28 +685,29 @@ function Overview({
         </Accordion>
       )}
       <Accordion title="Usage concentration" description="See which conversations account for the most output.">
-        <Concentration conversations={stats.conversations} />
+        <Concentration concentration={metrics.outputConcentration} />
       </Accordion>
     </>
   )
 }
-function Patterns({ stats, zone }: { stats: AnalyticsStatistics; zone: TimeZoneMode }) {
+function Patterns({ stats, timeZone }: { stats: AnalyticsStatistics; timeZone: string }) {
   const [metric, setMetric] = useState<'prompts' | 'input' | 'output'>('prompts')
+  const metrics = useMemo(() => deriveAnalyticsMetrics(stats, { timeZone }), [stats, timeZone])
   return (
     <>
       <section class="summary-grid">
         <Metric label="Active days" value={stats.summary.activeDays} />
         <Metric
           label="Median session prompts"
-          value={median(stats.sessions.map(session => session.prompts)).toFixed(1)}
+          value={metrics.sessionPromptCounts.median.toFixed(1)}
         />
         <Metric
           label="Sessions over 25 prompts"
-          value={stats.sessions.filter(session => session.prompts > 25).length}
+          value={metrics.sessionPromptCounts.over25}
         />
         <Metric
           label="Sessions over 100 prompts"
-          value={stats.sessions.filter(session => session.prompts > 100).length}
+          value={metrics.sessionPromptCounts.over100}
         />
       </section>
       <Accordion title="Weekly rhythm" description="Compare activity by weekday and hour." defaultOpen>
@@ -706,14 +723,14 @@ function Patterns({ stats, zone }: { stats: AnalyticsStatistics; zone: TimeZoneM
       </Accordion>
       <Accordion title="Session profile" description="Compare session size and start times.">
         <section class="two-up">
-          <SessionDistribution sessions={stats.sessions} />
-          <SessionStarts sessions={stats.sessions} utc={zone === 'utc'} />
+          <SessionDistribution bins={metrics.sessionDepth} />
+          <SessionStarts startsByHour={metrics.sessionStartsByHour} />
         </section>
       </Accordion>
       <Accordion title="Session continuation" description="See how session depth relates to duration and continuation.">
         <section class="two-up">
           <SessionScatter sessions={stats.sessions} />
-          <Continuation sessions={stats.sessions} />
+          <Continuation points={metrics.sessionContinuation} />
         </section>
       </Accordion>
       <Accordion title="Longest sessions" description="Inspect and sort the 25 sessions with the most prompts.">
@@ -1030,7 +1047,7 @@ function ConversationView({
           <Metric label="Prompts" value={value.summary.prompts} />
           <Metric label="Input words" value={value.summary.input.words} />
           <Metric label="Output words" value={value.summary.output.words} />
-          <Metric label="Output / input" value={ratio(value.summary.output, value.summary.input)} />
+          <Metric label="Output / input" value={formatRatio(textRatio(value.summary.output, value.summary.input))} />
           <Metric label="Sessions" value={value.summary.sessions} />
           <Metric label="Active days" value={value.summary.activeDays} />
           <Metric
@@ -1201,11 +1218,9 @@ function DayAttribution({ day }: { day: AnalyticsDay }) {
     </section>
   )
 }
-function Concentration({ conversations }: { conversations: readonly ConversationAnalytics[] }) {
-  const ordered = conversations.slice().sort((a, b) => b.output.words - a.output.words)
-  const ranked = ordered.slice(0, 12)
-  const total = conversations.reduce((sum, chat) => sum + chat.output.words, 0)
-  let cumulative = 0
+function Concentration({ concentration }: { concentration: AnalyticsDerivedMetrics['outputConcentration'] }) {
+  const ranked = concentration.conversations.slice(0, 12)
+  const topShares = concentration.topConversationShares
   return (
     <section class="breakdown-card">
       <div class="chart-heading">
@@ -1214,33 +1229,20 @@ function Concentration({ conversations }: { conversations: readonly Conversation
           <h2>Which chats account for output volume?</h2>
         </div>
         <span class="selected-date">
-          Top 1 / 5 / 10:{' '}
-          {share(
-            ordered.slice(0, 1).reduce((sum, chat) => sum + chat.output.words, 0),
-            total
-          )}{' '}
-          /{' '}
-          {share(
-            ordered.slice(0, 5).reduce((sum, chat) => sum + chat.output.words, 0),
-            total
-          )}{' '}
-          /{' '}
-          {share(
-            ordered.slice(0, 10).reduce((sum, chat) => sum + chat.output.words, 0),
-            total
-          )}
+          Top 1 / 5 / 10: {formatShare(topShares[0]?.share ?? 0)} / {formatShare(topShares[1]?.share ?? 0)} /{' '}
+          {formatShare(topShares[2]?.share ?? 0)}
         </span>
       </div>
       <ol class="concentration">
-        {ranked.map(chat => {
-          cumulative += chat.output.words
+        {ranked.map(entry => {
+          const { conversation, outputWords, share, cumulativeShare } = entry
           return (
             <li>
-              <a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title || 'Untitled chat'}</a>
+              <a href={`#/conversations/${encodeURIComponent(conversation.id)}`}>{conversation.title || 'Untitled chat'}</a>
               <div>
-                <i style={{ width: `${total ? (chat.output.words / total) * 100 : 0}%` }} />
+                <i style={{ width: `${share * 100}%` }} />
                 <span>
-                  {formatNumber(chat.output.words)} words · {share(cumulative, total)} cumulative
+                  {formatNumber(outputWords)} words · {formatShare(cumulativeShare)} cumulative
                 </span>
               </div>
             </li>
@@ -1329,41 +1331,22 @@ function HourHeatmap({
     </section>
   )
 }
-function SessionDistribution({ sessions }: { sessions: readonly SessionAnalytics[] }) {
-  const bins: readonly (readonly [number, number])[] = [
-    [1, 1],
-    [2, 5],
-    [6, 10],
-    [11, 25],
-    [26, 50],
-    [51, 100],
-    [101, Infinity],
-  ]
-  const counts = bins.map(
-    ([from, to]) => sessions.filter(session => session.prompts >= from && session.prompts <= to).length
-  )
+function SessionDistribution({ bins }: { bins: AnalyticsDerivedMetrics['sessionDepth'] }) {
   return (
     <MiniBars
       title="Session depth"
-      labels={bins.map(([from, to]) => (to === Infinity ? `${from}+` : from === to ? `${from}` : `${from}-${to}`))}
-      values={counts}
+      labels={bins.map(({ from, to }) => (to === null ? `${from}+` : from === to ? `${from}` : `${from}-${to}`))}
+      values={bins.map(bin => bin.sessions)}
       note="Prompts per observed session."
     />
   )
 }
-function SessionStarts({ sessions, utc }: { sessions: readonly SessionAnalytics[]; utc: boolean }) {
-  const values = Array.from(
-    { length: 24 },
-    (_, hour) =>
-      sessions.filter(session =>
-        utc ? new Date(session.startAt).getUTCHours() === hour : new Date(session.startAt).getHours() === hour
-      ).length
-  )
+function SessionStarts({ startsByHour }: { startsByHour: readonly number[] }) {
   return (
     <MiniBars
       title="Session starts"
-      labels={values.map((_, hour) => String(hour).padStart(2, '0'))}
-      values={values}
+      labels={startsByHour.map((_, hour) => String(hour).padStart(2, '0'))}
+      values={startsByHour}
       note="Observed session starts by hour."
     />
   )
@@ -1392,14 +1375,7 @@ function SessionScatter({ sessions }: { sessions: readonly SessionAnalytics[] })
     </section>
   )
 }
-function Continuation({ sessions }: { sessions: readonly SessionAnalytics[] }) {
-  const points = Array.from({ length: 12 }, (_, index) => index + 1)
-    .map(prompts => {
-      const reached = sessions.filter(session => session.prompts >= prompts).length
-      const continued = sessions.filter(session => session.prompts > prompts).length
-      return { prompts, rate: reached ? continued / reached : 0, reached }
-    })
-    .filter(point => point.reached >= 5)
+function Continuation({ points }: { points: AnalyticsDerivedMetrics['sessionContinuation'] }) {
   return (
     <section class="chart-card">
       <div class="chart-heading">
@@ -1413,7 +1389,7 @@ function Continuation({ sessions }: { sessions: readonly SessionAnalytics[] }) {
           <div>
             <span>{point.prompts}</span>
             <i style={{ width: `${point.rate * 100}%` }} />
-            <strong>{Math.round(point.rate * 100)}%</strong>
+            <strong>{formatShare(point.rate)}</strong>
           </div>
         ))}
       </div>
@@ -1507,7 +1483,7 @@ function MiniBars({
 }: {
   title: string
   labels: string[]
-  values: number[]
+  values: readonly number[]
   note: string
 }) {
   const max = Math.max(...values, 1)
@@ -1639,11 +1615,14 @@ function weekdayName(weekday: number, length: 'long' | 'short' = 'long'): string
 function hourLabel(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`
 }
-function ratio(output: TextMetrics, input: TextMetrics): string {
-  return input.words === 0 ? 'n/a' : `${(output.words / input.words).toFixed(1)}x`
+function textRatio(output: TextMetrics, input: TextMetrics): number | null {
+  return input.words === 0 ? null : output.words / input.words
 }
-function share(value: number, total: number): string {
-  return total === 0 ? '0%' : `${Math.round((value / total) * 100)}%`
+function formatRatio(value: number | null): string {
+  return value === null ? 'n/a' : `${value.toFixed(1)}x`
+}
+function formatShare(value: number): string {
+  return `${Math.round(value * 100)}%`
 }
 function formatNumber(value: number): string {
   return value.toLocaleString()
@@ -1689,12 +1668,6 @@ function phrasePreview(phrase: string): string {
   const boundary = compact.lastIndexOf(' ', 180)
   return `${compact.slice(0, boundary > 0 ? boundary : 180)}...`
 }
-function median(values: readonly number[]): number {
-  if (!values.length) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  const center = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[center]! : (sorted[center - 1]! + sorted[center]!) / 2
-}
 const conversationColumns: readonly SortableColumn<ConversationAnalytics>[] = [
   {
     id: 'title',
@@ -1731,7 +1704,7 @@ const conversationColumns: readonly SortableColumn<ConversationAnalytics>[] = [
     id: 'ratio',
     label: 'Output / input',
     compare: (a, b) => a.output.words / Math.max(a.input.words, 1) - b.output.words / Math.max(b.input.words, 1),
-    render: chat => ratio(chat.output, chat.input),
+    render: chat => formatRatio(textRatio(chat.output, chat.input)),
   },
   { id: 'sessions', label: 'Sessions', compare: (a, b) => a.sessions - b.sessions, render: chat => chat.sessions },
   { id: 'days', label: 'Active days', compare: (a, b) => a.activeDays - b.activeDays, render: chat => chat.activeDays },

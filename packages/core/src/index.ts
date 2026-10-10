@@ -34,10 +34,24 @@ export {
   type TurnPage,
 } from "./analytics.js";
 export {
+  buildPromptDistribution,
+  dailyMetricValue,
+  deriveAnalyticsMetrics,
+  deriveOutputConcentration,
+  distribution,
+  type AnalyticsDerivedMetrics,
+  type DailyMetric,
+  type DerivedMetricsOptions,
+  type Distribution,
+  type OutputConcentration,
+  type PromptDistributionBin,
+  type SessionContinuation,
+  type SessionDepthBin,
+} from "./derived-metrics.js";
+export {
   buildRecap,
   createRecapPrompt,
   serializeRecapYaml,
-  type Distribution,
   type RecapContextStrategy,
   type RecapConversationEvidence,
   type RecapDerivedMetrics,

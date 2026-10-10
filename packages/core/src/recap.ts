@@ -7,6 +7,11 @@ import {
   type RepeatedPhraseAnalysis,
   type TextMetrics,
 } from "./analytics.js";
+import {
+  deriveAnalyticsMetrics,
+  type AnalyticsDerivedMetrics,
+  type Distribution,
+} from "./derived-metrics.js";
 import type { Chat, Message, Thought } from "./types.js";
 
 export type RecapContextStrategy = "full" | "rolling-window";
@@ -48,30 +53,8 @@ export type RecapConversationEvidence = {
   messages: RecapMessage[];
 };
 
-export type RecapDerivedMetrics = {
-  outputToInputWordRatio: number | null;
-  daily: {
-    prompts: Distribution;
-    messages: Distribution;
-    inputWords: Distribution;
-    outputWords: Distribution;
-    totalWords: Distribution;
-  };
-  promptDistribution: Array<{ from: number; to: number; days: number }>;
-  outputConcentration: {
-    topConversationShares: Array<{ count: number; share: number }>;
-  };
-  sessionDepth: Array<{ from: number; to: number | null; sessions: number }>;
-  sessionStartsByHour: number[];
-  sessionContinuation: Array<{
-    prompts: number;
-    reached: number;
-    continued: number;
-    rate: number;
-  }>;
-};
-
-export type Distribution = { mean: number; median: number };
+export type RecapDerivedMetrics = AnalyticsDerivedMetrics;
+export type { Distribution };
 
 export type RecapDocument = {
   schema: "chatgpt-export-reader/recap/v1";
@@ -151,7 +134,7 @@ export function buildRecap(
       context: { strategy, maxMessages },
     },
     analytics: { ...analytics, repeatedPhrases },
-    metrics: deriveMetrics(analytics, timeZone),
+    metrics: deriveAnalyticsMetrics(analytics, { timeZone }),
     conversations: source
       .map((chat) => evidenceFor(chat, resolvedStart, resolvedEnd, timeZone, strategy, maxMessages))
       .filter((conversation): conversation is RecapConversationEvidence => conversation !== undefined),
@@ -273,83 +256,6 @@ function flattenMessages(roots: readonly Message[]): FlatMessage[] {
   return result;
 }
 
-function deriveMetrics(stats: AnalyticsStatistics, timeZone: string): RecapDerivedMetrics {
-  const daily = (value: (day: AnalyticsStatistics["days"][number]) => number): Distribution => {
-    const values = stats.days.map(value);
-    return { mean: mean(values), median: median(values) };
-  };
-  const totalOutput = stats.conversations.reduce((sum, chat) => sum + chat.output.words, 0);
-  const sessionDepthBounds: readonly [number, number | null][] = [[1, 1], [2, 5], [6, 10], [11, 25], [26, 50], [51, 100], [101, null]];
-  return {
-    outputToInputWordRatio: stats.summary.input.words === 0 ? null : stats.summary.output.words / stats.summary.input.words,
-    daily: {
-      prompts: daily((day) => day.prompts),
-      messages: daily((day) => day.messages),
-      inputWords: daily((day) => day.input.words),
-      outputWords: daily((day) => day.output.words),
-      totalWords: daily((day) => day.input.words + day.output.words),
-    },
-    promptDistribution: promptBins(stats.days.map((day) => day.prompts)),
-    outputConcentration: {
-      topConversationShares: [1, 5, 10].map((count) => ({
-        count,
-        share: totalOutput === 0 ? 0 : stats.conversations.slice(0, count).reduce((sum, chat) => sum + chat.output.words, 0) / totalOutput,
-      })),
-    },
-    sessionDepth: sessionDepthBounds.map(([from, to]) => ({
-      from,
-      to,
-      sessions: stats.sessions.filter((session) => session.prompts >= from && (to === null || session.prompts <= to)).length,
-    })),
-    sessionStartsByHour: Array.from({ length: 24 }, (_, hour) =>
-      stats.sessions.filter((session) => hourInZone(session.startAt, timeZone) === hour).length,
-    ),
-    sessionContinuation: Array.from({ length: 12 }, (_, index) => index + 1)
-      .map((prompts) => {
-        const reached = stats.sessions.filter((session) => session.prompts >= prompts).length;
-        const continued = stats.sessions.filter((session) => session.prompts > prompts).length;
-        return { prompts, reached, continued, rate: reached === 0 ? 0 : continued / reached };
-      })
-      .filter((point) => point.reached >= 5),
-  };
-}
-
-function promptBins(values: readonly number[]): Array<{ from: number; to: number; days: number }> {
-  const positive = values.filter((value) => value > 0).sort((left, right) => left - right);
-  const bins = [{ from: 0, to: 0, days: values.length - positive.length }];
-  if (positive.length === 0) return bins;
-  const minimum = positive[0]!;
-  const maximum = positive.at(-1)!;
-  const range = maximum - minimum + 1;
-  const interquartileRange = quantile(positive, 0.75) - quantile(positive, 0.25);
-  const suggestedWidth = (2 * interquartileRange) / Math.cbrt(positive.length);
-  const binCount =
-    suggestedWidth > 0
-      ? Math.ceil(range / suggestedWidth)
-      : Math.ceil(Math.log2(positive.length) + 1);
-  const width = Math.max(1, Math.ceil(range / Math.min(12, range, Math.max(1, binCount))));
-  for (let from = minimum; from <= maximum; from += width) {
-    const to = Math.min(from + width - 1, maximum);
-    bins.push({ from, to, days: positive.filter((value) => value >= from && value <= to).length });
-  }
-  return bins;
-}
-function quantile(values: readonly number[], percentile: number): number {
-  const position = (values.length - 1) * percentile;
-  const lower = Math.floor(position);
-  const upper = Math.ceil(position);
-  return values[lower]! + (values[upper]! - values[lower]!) * (position - lower);
-}
-
-function mean(values: readonly number[]): number {
-  return values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length;
-}
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
-}
 function textMetrics(text: string): TextMetrics {
   const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
   let words = 0;
@@ -396,9 +302,6 @@ function parts(timestamp: number, timeZone: string): Record<string, string> {
       .filter((part) => part.type !== "literal")
       .map((part) => [part.type, part.value]),
   );
-}
-function hourInZone(iso: string, timeZone: string): number {
-  return Number(parts(Date.parse(iso), timeZone).hour);
 }
 function normalizeNulls(value: unknown): unknown {
   if (value === undefined || value === null) return "";

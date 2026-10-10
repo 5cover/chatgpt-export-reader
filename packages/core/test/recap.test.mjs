@@ -3,7 +3,9 @@ import test from "node:test";
 import { parse } from "yaml";
 import {
   buildRecap,
+  collectAnalytics,
   createRecapPrompt,
+  deriveAnalyticsMetrics,
   serializeRecapYaml,
 } from "../dist/index.js";
 
@@ -15,6 +17,26 @@ const message = (id, role, body, createTime, children = []) => ({
   weight: 1,
   createTime,
   children,
+});
+
+test("derived metrics are the shared source for recap and dashboard consumers", () => {
+  const source = Array.from({ length: 5 }, (_, index) =>
+    chat(`chat-${index}`, [
+      message(`user-${index}`, "user", "one prompt", at(index + 1, 8)),
+      message(`assistant-${index}`, "assistant", "two response words", at(index + 1, 8, 5)),
+    ]),
+  );
+  const statistics = collectAnalytics(source, { timeZone: "UTC" });
+  const metrics = deriveAnalyticsMetrics(statistics, { timeZone: "UTC" });
+  const recap = buildRecap(source, { timeZone: "UTC" });
+
+  assert.deepEqual(recap.metrics, metrics);
+  assert.equal(metrics.outputToInputWordRatio, 1.5);
+  assert.deepEqual(metrics.daily.prompts, { mean: 1, median: 1 });
+  assert.deepEqual(metrics.promptDistribution, [{ from: 0, to: 0, days: 0 }, { from: 1, to: 1, days: 5 }]);
+  assert.equal(metrics.outputConcentration.topConversationShares[0].share, 0.2);
+  assert.deepEqual(metrics.sessionStartsByHour.slice(8, 9), [5]);
+  assert.deepEqual(metrics.sessionContinuation[0], { prompts: 1, reached: 5, continued: 0, rate: 0 });
 });
 const chat = (id, messages) => ({
   id,

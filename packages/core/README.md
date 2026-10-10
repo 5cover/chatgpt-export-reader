@@ -37,6 +37,14 @@ const analytics = collectAnalytics(chats, {
 
 `endDate` is also inclusive. Analytics validates both calendar dates and rejects a reversed range.
 
+`deriveAnalyticsMetrics` turns canonical analytics into shared presentation metrics: daily means and medians, prompt distributions, output concentration, and session profile metrics. The dashboard and recap builder consume this API, so their reported values stay aligned.
+
+```ts
+import { deriveAnalyticsMetrics } from "@chatgpt-export-reader/core";
+
+const metrics = deriveAnalyticsMetrics(analytics, { timeZone: "Europe/Paris" });
+```
+
 Use `collectTemporalMessageSlice` to inspect the user or assistant messages behind a weekday-hour aggregate. Omit `weekday` to match that hour on every day. The result includes conversation rollups and matching message evidence; paginate the `messages` array before sending large slices across a process or Worker boundary.
 
 ```ts

@@ -1,13 +1,6 @@
-import type { AnalyticsDay } from '@chatgpt-export-reader/core'
+import type { PromptDistributionBin } from '@chatgpt-export-reader/core'
 
-type PromptBin = {
-  from: number
-  to: number
-  days: number
-}
-
-export function PromptHistogram({ days }: { days: readonly AnalyticsDay[] }) {
-  const bins = buildPromptBins(days.map(day => day.prompts))
+export function PromptHistogram({ bins }: { bins: readonly PromptDistributionBin[] }) {
   const largestBin = Math.max(...bins.map(bin => bin.days), 1)
 
   return (
@@ -40,40 +33,6 @@ export function PromptHistogram({ days }: { days: readonly AnalyticsDay[] }) {
   )
 }
 
-export function buildPromptBins(prompts: readonly number[]): PromptBin[] {
-  const positive = prompts.filter(value => value > 0).sort((a, b) => a - b)
-  const bins: PromptBin[] = [{ from: 0, to: 0, days: prompts.length - positive.length }]
-  if (positive.length === 0) return bins
-
-  const minimum = positive[0]!
-  const maximum = positive.at(-1)!
-  const range = maximum - minimum + 1
-  const binCount = automaticBinCount(positive, range)
-  const width = Math.max(1, Math.ceil(range / binCount))
-
-  for (let from = minimum; from <= maximum; from += width) {
-    const to = Math.min(from + width - 1, maximum)
-    bins.push({ from, to, days: positive.filter(value => value >= from && value <= to).length })
-  }
-  return bins
-}
-
-function automaticBinCount(values: readonly number[], range: number): number {
-  if (range === 1) return 1
-  const interquartileRange = quantile(values, 0.75) - quantile(values, 0.25)
-  const suggestedWidth = (2 * interquartileRange) / Math.cbrt(values.length)
-  const suggestedCount =
-    suggestedWidth > 0 ? Math.ceil(range / suggestedWidth) : Math.ceil(Math.log2(values.length) + 1)
-  return Math.min(12, range, Math.max(1, suggestedCount))
-}
-
-function quantile(values: readonly number[], percentile: number): number {
-  const position = (values.length - 1) * percentile
-  const lower = Math.floor(position)
-  const upper = Math.ceil(position)
-  return values[lower]! + (values[upper]! - values[lower]!) * (position - lower)
-}
-
-function formatBin(bin: PromptBin): string {
+function formatBin(bin: PromptDistributionBin): string {
   return bin.from === bin.to ? `${bin.from}` : `${bin.from}-${bin.to}`
 }
