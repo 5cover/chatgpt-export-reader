@@ -10,7 +10,7 @@ import {
 
 const accumulator = new UsageStatsAccumulator("UTC");
 accumulator.addChat(normalizeV1Chat(rawConversation));
-const statistics = accumulator.finish();
+const statistics = accumulator.finish(); 
 ```
 
 `normalizeV1Chat` accepts one raw entry from a `conversations*.json` array. Consumers choose their own file and JSON streaming layer; this makes the package usable from Node, browsers, and Workers.
