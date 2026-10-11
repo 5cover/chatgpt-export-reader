@@ -2,18 +2,43 @@
   "name": "chatgpt-export-reader",
   "version": "1.0.0",
   "description": "Turn ChatGPT exports into Markdown, prompt, JSON, and statistics artifacts.",
+  "keywords": [
+    "chatgpt",
+    "openai",
+    "chatgpt-export",
+    "markdown",
+    "cli"
+  ],
+  "author": "Scover",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/5cover/chatgpt-export-reader.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/5cover/chatgpt-export-reader/issues"
+  },
+  "homepage": "https://github.com/5cover/chatgpt-export-reader#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
     "chatgpt-export-reader": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc --incremental",
     "lint": "eslint src",
-    "test": "pnpm build && node --test test/*.test.mjs"
+    "test": "pnpm build && node --test test/*.test.mjs",
+    "check": "pnpm lint && pnpm test",
+    "prepack": "pnpm --filter @chatgpt-export-reader/core build && pnpm build",
+    "prepublishOnly": "pnpm --filter @chatgpt-export-reader/core test && pnpm test"
   },
   "license": "MIT",
   "dependencies": {

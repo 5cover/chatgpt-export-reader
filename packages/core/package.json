@@ -2,15 +2,35 @@
   "name": "@chatgpt-export-reader/core",
   "version": "1.0.0",
   "description": "ChatGPT export normalization and usage statistics.",
+  "keywords": [
+    "chatgpt",
+    "openai",
+    "chatgpt-export",
+    "analytics",
+    "statistics"
+  ],
+  "author": "Scover",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/5cover/chatgpt-export-reader.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/5cover/chatgpt-export-reader/issues"
+  },
+  "homepage": "https://github.com/5cover/chatgpt-export-reader#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,7 +40,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "pnpm build && node --test test/*.test.mjs",
-    "prepack": "pnpm build"
+    "check": "pnpm test",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm test"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@toon-format/toon": "^4.4.0",

@@ -6,7 +6,8 @@
     "build": "pnpm --filter @chatgpt-export-reader/core build && pnpm --filter chatgpt-export-reader build",
     "build:dashboard": "pnpm --filter @chatgpt-export-reader/dashboard build",
     "build:all": "pnpm build && pnpm build:dashboard",
-    "lint": "pnpm --filter chatgpt-export-reader lint"
+    "lint": "pnpm --filter chatgpt-export-reader lint",
+    "publish:check": "pnpm build && pnpm --filter @chatgpt-export-reader/core check && pnpm --filter chatgpt-export-reader check && pnpm --filter @chatgpt-export-reader/core pack --dry-run --json && pnpm --filter chatgpt-export-reader pack --dry-run --json"
   },
   "devDependencies": {
     "prettier": "^3.9.6"

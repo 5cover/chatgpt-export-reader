@@ -2,6 +2,16 @@
 
 Browser-safe primitives for normalizing ChatGPT v1 conversation records and calculating usage statistics. It has no Node filesystem or stream dependencies.
 
+## Install
+
+```sh
+npm install @chatgpt-export-reader/core
+```
+
+The package supports Node.js 20 or later and browser bundlers.
+
+## Usage
+
 ```ts
 import {
   normalizeV1Chat,
@@ -80,3 +90,7 @@ Use `context.strategy: "full"` when every earlier timestamped message in each in
 `serializeRecapYaml` compacts the transport format without changing the in-memory analytics API: text totals use `wc: words characters`, ordinary message timestamps use `at`, and document-local numeric IDs replace source GUIDs consistently across references. Default message values such as `weight: 1` and empty models or thought lists are omitted.
 
 Use `serializeRecapToon(recap)` for the same compact evidence document in TOON. Pass `"toon"` as the second argument to `createRecapPrompt` when the generated prompt should identify TOON as its evidence format.
+
+## License
+
+[MIT](LICENSE)
