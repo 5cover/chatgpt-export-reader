@@ -9,18 +9,16 @@ import { promisify } from "node:util";
 const execFile = promisify(execFileCallback);
 const cliRoot = new URL("..", import.meta.url);
 
-test("recap is registered and emits separate filtered artifacts", async () => {
+test("recap emits separate filtered YAML artifacts by default", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chatgpt-recap-cli-"));
   try {
     const input = join(directory, "conversations.json");
     const output = join(directory, "out");
     await writeFile(input, JSON.stringify([fixture("included"), fixture("excluded")]), "utf8");
 
-    const formats = await run(["--output-formats"]);
-    assert.match(formats.stdout, /recap: Generate editable recap evidence YAML/);
     await run([
+      "recap",
       input,
-      "--output-format", "recap",
       "--export-format", "filesystem",
       "--fs-path", output,
       "--chat", "included",
@@ -32,29 +30,68 @@ test("recap is registered and emits separate filtered artifacts", async () => {
     assert.deepEqual((await readdir(output)).sort(), ["recap-context.yaml", "recap-prompt.md"]);
     const context = await readFile(join(output, "recap-context.yaml"), "utf8");
     const prompt = await readFile(join(output, "recap-prompt.md"), "utf8");
-    assert.match(context, /id: included/);
-    assert.doesNotMatch(context, /id: excluded/);
+    assert.match(context, /included title/);
+    assert.doesNotMatch(context, /excluded title/);
     assert.match(prompt, /thoughtful retrospective/);
+    assert.match(prompt, /accompanying YAML/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("recap CLI reports invalid styles and context budgets", async () => {
+test("recap emits TOON context and updates its prompt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chatgpt-recap-cli-"));
+  try {
+    const input = join(directory, "conversations.json");
+    const output = join(directory, "out");
+    await writeFile(input, JSON.stringify([fixture("included")]), "utf8");
+
+    await run([
+      "recap",
+      input,
+      "--export-format", "filesystem",
+      "--fs-path", output,
+      "--context-format", "toon",
+    ]);
+    assert.deepEqual((await readdir(output)).sort(), ["recap-context.toon", "recap-prompt.md"]);
+    assert.match(await readFile(join(output, "recap-context.toon"), "utf8"), /conversations\[1\]/);
+    assert.match(await readFile(join(output, "recap-prompt.md"), "utf8"), /accompanying TOON/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("recap CLI reports invalid scoped options", async () => {
   await assert.rejects(
-    run(["ignored.json", "--output-format", "recap", "--recap-style", "unknown"]),
+    run(["recap", "ignored.json", "--recap-style", "unknown"]),
     /unknown recap style: unknown/,
   );
   await assert.rejects(
-    run(["ignored.json", "--output-format", "recap", "--context-messages", "-1"]),
+    run(["recap", "ignored.json", "--context-messages", "-1"]),
     /--context-messages must be a non-negative integer/,
+  );
+  await assert.rejects(
+    run(["recap", "ignored.json", "--context-format", "unknown"]),
+    /unknown recap context format: unknown/,
+  );
+  await assert.rejects(
+    run(["stats", "ignored.json", "--recap-style", "narrative"]),
+  );
+  await assert.rejects(
+    run(["recap", "ignored.json", "--output-format", "recap"]),
   );
 });
 
 async function run(argumentsList) {
-  return execFile(process.execPath, ["dist/cli.js", ...argumentsList], {
-    cwd: new URL(".", cliRoot),
-  });
+  try {
+    return await execFile(process.execPath, ["dist/cli.js", ...argumentsList], {
+      cwd: new URL(".", cliRoot),
+    });
+  } catch (error) {
+    if (error instanceof Error && "stderr" in error)
+      error.message += `\n${String(error.stderr)}`;
+    throw error;
+  }
 }
 
 function fixture(id) {

@@ -8,7 +8,7 @@ Generate a self-contained usage-report directory from a ChatGPT export:
 
 ```sh
 pnpm build
-node packages/cli/dist/cli.js conversations.json --output-format stats --export-format filesystem --fs-path out/stats
+node packages/cli/dist/cli.js stats conversations.json --export-format filesystem --fs-path out/stats
 ```
 
 The report contains `stats.json`, CSV tables for daily and role counts, and an SVG line chart of daily message and user-prompt activity. Daily data uses UTC and includes every calendar day from the first timestamped message to the last.
@@ -19,8 +19,7 @@ Generate two editable recap artifacts from a filesystem export: `recap-context.y
 
 ```sh
 pnpm build
-node packages/cli/dist/cli.js exports/conversations.json \
-  --output-format recap \
+node packages/cli/dist/cli.js recap exports/conversations.json \
   --export-format filesystem \
   --fs-path out/recap \
   --time-zone Europe/Paris \
@@ -32,6 +31,10 @@ node packages/cli/dist/cli.js exports/conversations.json \
 ```
 
 `--context-strategy full` includes all preceding timestamped messages for each included conversation. `rolling-window` is the default and includes a per-conversation budget split between the start of the conversation and messages directly before the selected range. Prompt styles are `narrative`, `reflective`, and `playful`.
+
+YAML is the default context format. Use `--context-format toon` to write `recap-context.toon` instead, then compare separate runs with `wc -c out/recap-yaml/recap-context.yaml out/recap-toon/recap-context.toon`. TOON can reduce structural overhead for regular arrays, but it is not guaranteed to be smaller for every recap.
+
+Run `node packages/cli/dist/cli.js --help` for rendering subcommands and `node packages/cli/dist/cli.js formats` for supported input and artifact export formats.
 
 ## Usage dashboard
 

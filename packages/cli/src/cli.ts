@@ -1,5 +1,6 @@
 import { Command } from "@commander-js/extra-typings";
 import type {
+  RecapContextFormat,
   RecapContextStrategy,
   RecapPromptStyle,
 } from "@chatgpt-export-reader/core";
@@ -32,67 +33,32 @@ const inputFormats = [
   },
 ] as const satisfies readonly { name: string; desc: string; input: Input }[];
 
-const outputFormats = [
-  {
-    name: "markdown",
-    desc: "Render chats into branch-aware Markdown documents.",
-    create: () => new MarkdownOutput(),
-  },
-  {
-    name: "json",
-    desc: "Render each chat as a JSON string artifact keyed by chat ID.",
-    create: () => new JsonOutput(),
-  },
-  {
-    name: "prompt",
-    desc: "Render chats as prompt-style transcripts with configurable role prefixes.",
-    create: () => new PromptOutput(),
-  },
-  {
-    name: "stats",
-    desc: "Generate usage statistics as JSON, CSV, and SVG chart artifacts.",
-    create: () => new StatsOutput(),
-  },
-  {
-    name: "recap",
-    desc: "Generate editable recap evidence YAML and an LLM prompt.",
-    create: (options) =>
-      new RecapOutput({
-        timeZone: options.timeZone,
-        startDate: options.startDate,
-        endDate: options.endDate,
-        sessionGapMinutes: numberOption(
-          options.sessionGapMinutes,
-          "--session-gap-minutes",
-        ),
-        context: {
-          strategy: recapStrategy(options.contextStrategy),
-          maxMessages: recapContextMessages(options.contextMessages),
-        },
-        promptStyle: recapStyle(options.recapStyle),
-      }),
-  },
-] as const satisfies readonly {
-  name: string;
-  desc: string;
-  create: (options: OutputOptions) => OutputFormat;
-}[];
+type CommonOptions = {
+  inputFormat: string;
+  exportFormat: string;
+  chat: string[];
+  fsPath?: string;
+  streamFile: string;
+};
 
-type OutputOptions = {
-  timeZone?: string;
+type ExportOptions = Pick<CommonOptions, "fsPath" | "streamFile">;
+
+type RecapCommandOptions = CommonOptions & {
+  timeZone: string;
   startDate?: string;
   endDate?: string;
   sessionGapMinutes?: string;
-  contextStrategy?: string;
-  contextMessages?: string;
-  recapStyle?: string;
+  contextStrategy: string;
+  contextMessages: string;
+  recapStyle: string;
+  contextFormat: string;
 };
 
 const exportFormats = [
   {
     name: "filesystem",
     desc: "Write artifacts to the filesystem as directories or a single file.",
-    create: (options: { fsPath?: string; streamFile: string }) => {
+    create: (options: ExportOptions) => {
       if (!options.fsPath)
         throw new Error("--fs-path is required for the filesystem exporter");
       return new FilesystemExporter({ path: options.fsPath });
@@ -101,40 +67,52 @@ const exportFormats = [
   {
     name: "flat",
     desc: "Write flattened artifact contents to a stream separated by blank lines.",
-    create: (options: { fsPath?: string; streamFile: string }) =>
+    create: (options: ExportOptions) =>
       new FlatExporter({ stream: openStream(options.streamFile) }),
   },
   {
     name: "json",
     desc: "Write the full artifact tree as JSON to a stream.",
-    create: (options: { fsPath?: string; streamFile: string }) =>
+    create: (options: ExportOptions) =>
       new JsonArtifactExporter({ stream: openStream(options.streamFile) }),
   },
 ] as const satisfies readonly {
   name: string;
   desc: string;
-  create: (options: { fsPath?: string; streamFile: string }) => Exporter;
+  create: (options: ExportOptions) => Exporter;
 }[];
 
-const program = new Command();
-
-program
+const program = new Command()
   .name("chatgpt-export-reader")
-  .description("Turn ChatGPT exports into markdown, prompt, or JSON artifacts.")
-  .argument("[input-path]", "Input export file or directory")
-  .option("-i, --input-format <name>", "Input format", "v1")
-  .option("-o, --output-format <name>", "Output format", "markdown")
-  .option("-e, --export-format <name>", "Export format", "flat")
-  .option("--input-formats", "List available input formats")
-  .option("--output-formats", "List available output formats")
-  .option("--export-formats", "List available export formats")
-  .option(
-    "-c, --chat <uuid>",
-    "Keep only specific chat IDs",
-    collect,
-    [] as string[],
-  )
-  .option("--fs-path <path>", "Filesystem exporter destination path")
+  .description("Turn ChatGPT exports into transcript, statistics, and recap artifacts.")
+  .showHelpAfterError();
+
+addOutputCommand(
+  "markdown",
+  "Render chats into branch-aware Markdown documents.",
+  () => new MarkdownOutput(),
+);
+addOutputCommand(
+  "json",
+  "Render each chat as a JSON string artifact keyed by chat ID.",
+  () => new JsonOutput(),
+);
+addOutputCommand(
+  "prompt",
+  "Render chats as prompt-style transcripts with configurable role prefixes.",
+  () => new PromptOutput(),
+);
+addOutputCommand(
+  "stats",
+  "Generate usage statistics as JSON, CSV, and SVG chart artifacts.",
+  () => new StatsOutput(),
+);
+
+configureCommonOptions(
+  program
+    .command("recap <input-path>")
+    .description("Generate editable recap context and an LLM prompt."),
+)
   .option("--start-date <YYYY-MM-DD>", "Inclusive recap start date in the selected timezone")
   .option("--end-date <YYYY-MM-DD>", "Inclusive recap end date in the selected timezone")
   .option("--time-zone <iana-zone>", "Recap timezone", "UTC")
@@ -142,48 +120,92 @@ program
   .option("--context-strategy <full|rolling-window>", "Pre-window context strategy", "rolling-window")
   .option("--context-messages <number>", "Maximum preceding messages per conversation", "20")
   .option("--recap-style <name>", "Prompt style: narrative, reflective, or playful", "narrative")
-  .option(
-    "--stream-file <path|->",
-    "Stream exporter destination, use - for stdout",
-    "-",
-  )
+  .option("--context-format <yaml|toon>", "Recap context serialization", "yaml")
   .showHelpAfterError()
   .action(async (input, options) => {
-    if (options.inputFormats) {
-      printFormats("Input formats", inputFormats);
-      return;
-    }
-    if (options.outputFormats) {
-      printFormats("Output formats", outputFormats);
-      return;
-    }
-    if (options.exportFormats) {
-      printFormats("Export formats", exportFormats);
-      return;
-    }
-    if (!input)
-      throw new Error(
-        "input-path is required unless a --*-formats flag is used",
-      );
-
-    const inputF = getInputFormat(options.inputFormat);
-    const outputF = getOutputFormat(options.outputFormat, options);
-    const exportF = createExporter(options.exportFormat, {
-      fsPath: options.fsPath,
-      streamFile: options.streamFile,
-    });
-    const selectedChats = new Set(options.chat);
-    const artifacts = await outputF.render(
-      filterChats(readInput(inputF, input), selectedChats),
+    const recapOptions: RecapCommandOptions = options;
+    await render(
+      input,
+      recapOptions,
+      new RecapOutput(
+        {
+          timeZone: recapOptions.timeZone,
+          startDate: recapOptions.startDate,
+          endDate: recapOptions.endDate,
+          sessionGapMinutes: numberOption(
+            recapOptions.sessionGapMinutes,
+            "--session-gap-minutes",
+          ),
+          context: {
+            strategy: recapStrategy(recapOptions.contextStrategy),
+            maxMessages: recapContextMessages(recapOptions.contextMessages),
+          },
+          promptStyle: recapStyle(recapOptions.recapStyle),
+        },
+        recapContextFormat(recapOptions.contextFormat),
+      ),
     );
-    if (selectedChats.size && artifacts.size === 0) {
-      throw new Error(
-        `no chats matched requested IDs: ${[...selectedChats].join(", ")}`,
-      );
-    }
-    await exportF.export(artifacts);
-  })
-  .parse();
+  });
+
+program
+  .command("formats")
+  .description("List supported input and artifact export formats.")
+  .action(() => {
+    printFormats("Input formats", inputFormats);
+    printFormats("Export formats", exportFormats);
+  });
+
+await program.parseAsync();
+
+function addOutputCommand(
+  name: string,
+  description: string,
+  create: () => OutputFormat,
+): void {
+  configureCommonOptions(
+    program.command(`${name} <input-path>`).description(description),
+  )
+    .showHelpAfterError()
+    .action(async (input, options) => {
+      await render(input, options, create());
+    });
+}
+
+function configureCommonOptions<
+  Args extends unknown[],
+  Options extends Record<string, unknown>,
+  GlobalOptions extends Record<string, unknown>,
+>(command: Command<Args, Options, GlobalOptions>) {
+  return command
+    .option("-i, --input-format <name>", "Input format", "v1")
+    .option("-e, --export-format <name>", "Export format", "flat")
+    .option("-c, --chat <uuid>", "Keep only specific chat IDs", collect, [] as string[])
+    .option("--fs-path <path>", "Filesystem exporter destination path")
+    .option(
+      "--stream-file <path|->",
+      "Stream exporter destination, use - for stdout",
+      "-",
+    );
+}
+
+async function render(
+  inputPath: string,
+  options: CommonOptions,
+  output: OutputFormat,
+): Promise<void> {
+  const input = getInputFormat(options.inputFormat);
+  const exporter = createExporter(options.exportFormat, options);
+  const selectedChats = new Set(options.chat);
+  const artifacts = await output.render(
+    filterChats(readInput(input, inputPath), selectedChats),
+  );
+  if (selectedChats.size && artifacts.size === 0) {
+    throw new Error(
+      `no chats matched requested IDs: ${[...selectedChats].join(", ")}`,
+    );
+  }
+  await exporter.export(artifacts);
+}
 
 function getInputFormat(name: string): Input {
   const format = inputFormats.find((format) => format.name === name);
@@ -191,19 +213,7 @@ function getInputFormat(name: string): Input {
   return format.input;
 }
 
-function getOutputFormat(name: string, options?: OutputOptions): OutputFormat {
-  const format = outputFormats.find((format) => format.name === name);
-  if (!format) throw new Error(`unknown output format: ${name}`);
-  return format.create(options ?? {});
-}
-
-function createExporter(
-  name: string,
-  options: {
-    fsPath?: string;
-    streamFile: string;
-  },
-): Exporter {
+function createExporter(name: string, options: ExportOptions): Exporter {
   const format = exportFormats.find((format) => format.name === name);
   if (!format) throw new Error(`unknown export format: ${name}`);
   return format.create(options);
@@ -233,7 +243,7 @@ function openStream(path: string): Writable {
   return createWriteStream(path, { encoding: "utf8" });
 }
 
-function collect(value: string, previous: string[]) {
+function collect(value: string, previous: string[]): string[] {
   previous.push(value);
   return previous;
 }
@@ -245,24 +255,23 @@ function numberOption(value: string | undefined, option: string): number | undef
   return Number(value);
 }
 
-function recapStrategy(value: string | undefined): RecapContextStrategy | undefined {
-  if (value === undefined || value === "full" || value === "rolling-window")
-    return value;
+function recapStrategy(value: string): RecapContextStrategy {
+  if (value === "full" || value === "rolling-window") return value;
   throw new Error(`unknown context strategy: ${value}`);
 }
 
-function recapStyle(value: string | undefined): RecapPromptStyle | undefined {
-  if (
-    value === undefined ||
-    value === "narrative" ||
-    value === "reflective" ||
-    value === "playful"
-  )
+function recapStyle(value: string): RecapPromptStyle {
+  if (value === "narrative" || value === "reflective" || value === "playful")
     return value;
   throw new Error(`unknown recap style: ${value}`);
 }
 
-function recapContextMessages(value: string | undefined): number | undefined {
+function recapContextFormat(value: string): RecapContextFormat {
+  if (value === "yaml" || value === "toon") return value;
+  throw new Error(`unknown recap context format: ${value}`);
+}
+
+function recapContextMessages(value: string): number | undefined {
   const number = numberOption(value, "--context-messages");
   if (number === undefined) return undefined;
   if (!Number.isInteger(number) || number < 0)
@@ -273,9 +282,7 @@ function recapContextMessages(value: string | undefined): number | undefined {
 function printFormats(
   title: string,
   formats: readonly { name: string; desc: string }[],
-) {
+): void {
   console.log(title);
-  for (const format of formats) {
-    console.log(`- ${format.name}: ${format.desc}`);
-  }
+  for (const format of formats) console.log(`- ${format.name}: ${format.desc}`);
 }

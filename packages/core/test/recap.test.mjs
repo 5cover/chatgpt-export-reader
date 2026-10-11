@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { decode } from "@toon-format/toon";
 import { parse } from "yaml";
 import {
   buildRecap,
   collectAnalytics,
   createRecapPrompt,
   deriveAnalyticsMetrics,
+  serializeRecapToon,
   serializeRecapYaml,
 } from "../dist/index.js";
 
@@ -113,11 +115,12 @@ test("rolling context preserves branches, applies independent budgets, and marks
   assert.equal(two.preWindowContext.length, 1);
 });
 
-test("YAML is compact, parseable, timestamped locally, and prompt styles remain separate", () => {
+test("YAML and TOON are compact, equivalent, and timestamped locally", () => {
   const source = [chat("one", [message("one", "assistant", "first line\nsecond line", Date.UTC(2026, 9, 11, 8, 30))])];
   source[0].messages[0].thoughts = [{ summary: "plan", content: "reasoning", chunks: ["reasoning"] }];
   const recap = buildRecap(source, { timeZone: "Europe/Paris" });
   const yaml = serializeRecapYaml(recap);
+  const toon = serializeRecapToon(recap);
   const parsed = parse(yaml);
   assert.equal(parsed.schema, "chatgpt-export-reader/recap/v1");
   assert.match(yaml, /text: \|-\n/);
@@ -133,8 +136,15 @@ test("YAML is compact, parseable, timestamped locally, and prompt styles remain 
   assert.equal("model" in parsed.conversations[0].messages[0], false);
   assert.ok(parsed.conversations[0].messages[0].thoughts);
   assert.equal(yaml.includes("null"), false);
+  assert.deepEqual(decode(toon), parsed);
+  assert.match(toon, /conversations\[1\]/);
   assert.match(createRecapPrompt("playful"), /awards-and-highlights/);
+  assert.match(createRecapPrompt("playful", "toon"), /accompanying TOON/);
   assert.throws(() => createRecapPrompt("unknown"), /unknown recap prompt style/);
+  assert.throws(
+    () => createRecapPrompt("narrative", "unknown"),
+    /unknown recap context format/,
+  );
 });
 
 test("compact YAML IDs are numeric and retain message parent references", () => {
