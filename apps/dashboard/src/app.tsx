@@ -9,6 +9,9 @@ import type {
   DayConversation,
   MessageContent,
   RepeatedPhraseAnalysis,
+  RecapContextFormat,
+  RecapContextStrategy,
+  RecapPromptStyle,
   SessionAnalytics,
   TemporalConversation,
   TemporalMessageEvidence,
@@ -41,6 +44,7 @@ type Route =
   | { page: 'about' }
   | { page: 'overview' }
   | { page: 'patterns' }
+  | { page: 'recap' }
   | { page: 'time'; filter: TemporalMessageFilter }
   | { page: 'conversations' }
   | { page: 'conversation'; id: string }
@@ -60,6 +64,21 @@ type TemporalPage = {
 }
 type TemporalState =
   { kind: 'loading' } | { kind: 'ready'; page: TemporalPage; updating: boolean } | { kind: 'error'; message: string }
+type RecapSettings = {
+  timeZone: string
+  startDate?: string
+  endDate?: string
+  sessionGapMinutes: number
+  contextStrategy: RecapContextStrategy
+  contextMessages: number
+  promptStyle: RecapPromptStyle
+  contextFormat: RecapContextFormat
+}
+type RecapState =
+  | { kind: 'idle' }
+  | { kind: 'generating' }
+  | { kind: 'ready'; prompt: string; contextUrl: string; contextFormat: RecapContextFormat; contextSize: number }
+  | { kind: 'error'; message: string }
 
 export function App() {
   const folderInput = useRef<HTMLInputElement>(null)
@@ -74,6 +93,9 @@ export function App() {
   const activeConversationRepetitions = useRef<number>()
   const activeTemporalSlice = useRef<number>()
   const activeTemporalContent = useRef<number>()
+  const activeRecap = useRef<number>()
+  const recapUrl = useRef<string>()
+  const recapInitialized = useRef(false)
   const zoneRef = useRef<TimeZoneMode>('local')
   const [state, setState] = useState<ImportState>({ kind: 'idle' })
   const [zone, setZone] = useState<TimeZoneMode>('local')
@@ -92,6 +114,15 @@ export function App() {
   const [temporalConversation, setTemporalConversation] = useState<string>()
   const [temporalOrder, setTemporalOrder] = useState<'newest' | 'oldest'>('newest')
   const [temporalContents, setTemporalContents] = useState<Record<string, string>>({})
+  const [recapSettings, setRecapSettings] = useState<RecapSettings>({
+    timeZone: localTimeZone(),
+    sessionGapMinutes: 60,
+    contextStrategy: 'rolling-window',
+    contextMessages: 20,
+    promptStyle: 'narrative',
+    contextFormat: 'yaml',
+  })
+  const [recap, setRecap] = useState<RecapState>({ kind: 'idle' })
 
   zoneRef.current = zone
   const readyState = state.kind === 'ready' ? state : undefined
@@ -110,8 +141,20 @@ export function App() {
     return () => {
       nextWorker.terminate()
       removeEventListener('hashchange', onHashChange)
+      if (recapUrl.current) URL.revokeObjectURL(recapUrl.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (route.page !== 'recap' || !stats || recapInitialized.current) return
+    recapInitialized.current = true
+    setRecapSettings(current => ({
+      ...current,
+      timeZone: selectedTimeZone(zone),
+      startDate,
+      sessionGapMinutes,
+    }))
+  }, [route, stats, zone, startDate, sessionGapMinutes])
 
   useEffect(() => {
     if (route.page !== 'conversation' || !stats) return
@@ -222,6 +265,19 @@ export function App() {
         ...current,
         ...Object.fromEntries(message.contents.map(content => [content.id, content.body])),
       }))
+    } else if (message.type === 'recap') {
+      if (message.requestId !== activeRecap.current) return
+      activeRecap.current = undefined
+      if (recapUrl.current) URL.revokeObjectURL(recapUrl.current)
+      const contextUrl = URL.createObjectURL(message.context)
+      recapUrl.current = contextUrl
+      setRecap({
+        kind: 'ready',
+        prompt: message.prompt,
+        contextUrl,
+        contextFormat: message.contextFormat,
+        contextSize: message.context.size,
+      })
     } else if (message.operation === 'import') {
       if (message.requestId !== activeImport.current) return
       activeImport.current = undefined
@@ -253,6 +309,10 @@ export function App() {
       if (message.requestId !== activeTemporalContent.current) return
       activeTemporalContent.current = undefined
       setTemporal({ kind: 'error', message: message.message })
+    } else if (message.operation === 'recap') {
+      if (message.requestId !== activeRecap.current) return
+      activeRecap.current = undefined
+      setRecap({ kind: 'error', message: message.message })
     } else {
       if (message.requestId !== activeConversationRepetitions.current) return
       activeConversationRepetitions.current = undefined
@@ -283,6 +343,7 @@ export function App() {
     activeConversationRepetitions.current = undefined
     activeTemporalSlice.current = undefined
     activeTemporalContent.current = undefined
+    clearRecap()
     setConversationRepetitions(undefined)
     setTemporal(undefined)
     setTemporalContents({})
@@ -396,6 +457,49 @@ export function App() {
     worker.current?.postMessage({ type: 'temporal-content', requestId, cacheKey, ids: [id] })
   }
 
+  function clearRecap() {
+    activeRecap.current = undefined
+    if (recapUrl.current) URL.revokeObjectURL(recapUrl.current)
+    recapUrl.current = undefined
+    setRecap({ kind: 'idle' })
+  }
+
+  function updateRecapSettings(change: Partial<RecapSettings>) {
+    clearRecap()
+    setRecapSettings(current => ({ ...current, ...change }))
+  }
+
+  function generateRecap() {
+    if (!stats) return
+    clearRecap()
+    const settings = {
+      ...recapSettings,
+      timeZone: recapSettings.timeZone.trim(),
+      startDate: recapSettings.startDate || undefined,
+      endDate: recapSettings.endDate || undefined,
+    }
+    if (!settings.timeZone) {
+      setRecap({ kind: 'error', message: 'Timezone is required.' })
+      return
+    }
+    if (
+      !Number.isInteger(settings.sessionGapMinutes) ||
+      settings.sessionGapMinutes < 1 ||
+      settings.sessionGapMinutes > 1_440
+    ) {
+      setRecap({ kind: 'error', message: 'Session gap must be an integer between 1 and 1440 minutes.' })
+      return
+    }
+    if (!Number.isInteger(settings.contextMessages) || settings.contextMessages < 0) {
+      setRecap({ kind: 'error', message: 'Context messages must be a non-negative integer.' })
+      return
+    }
+    const requestId = ++nextRequest.current
+    activeRecap.current = requestId
+    setRecap({ kind: 'generating' })
+    worker.current?.postMessage({ type: 'recap', requestId, ...settings })
+  }
+
   return (
     <main>
       <header class="masthead">
@@ -435,7 +539,7 @@ export function App() {
       {state.kind === 'error' && <Status title="Import failed" detail={state.message} error />}
       {stats && (
         <>
-          {visibleRoute.page !== 'about' && readyState && (
+          {visibleRoute.page !== 'about' && visibleRoute.page !== 'recap' && readyState && (
             <Controls
               zone={zone}
               startDate={startDate}
@@ -464,6 +568,14 @@ export function App() {
             />
           )}
           {visibleRoute.page === 'patterns' && <Patterns stats={stats} timeZone={selectedTimeZone(zone)} />}
+          {visibleRoute.page === 'recap' && (
+            <RecapView
+              settings={recapSettings}
+              state={recap}
+              onChange={updateRecapSettings}
+              onGenerate={generateRecap}
+            />
+          )}
           {visibleRoute.page === 'time' && (
             <TemporalView
               route={visibleRoute}
@@ -524,6 +636,9 @@ function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) {
           </a>
           <a class={route.page === 'patterns' || route.page === 'time' ? 'active' : ''} href="#/patterns">
             Patterns
+          </a>
+          <a class={route.page === 'recap' ? 'active' : ''} href="#/recap">
+            Recap
           </a>
           <a
             class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''}
@@ -599,6 +714,157 @@ function Controls({
         Imported in {(imported / 1000).toFixed(1)}s{skipped ? `; ${skipped} invalid chats skipped` : ''}
       </small>
     </div>
+  )
+}
+function RecapView({
+  settings,
+  state,
+  onChange,
+  onGenerate,
+}: {
+  settings: RecapSettings
+  state: RecapState
+  onChange: (change: Partial<RecapSettings>) => void
+  onGenerate: () => void
+}) {
+  return (
+    <>
+      <section class="recap-heading">
+        <p class="eyebrow">Conversation recap</p>
+        <h2>Prepare private evidence for a personalized recap.</h2>
+        <p>
+          The context can be large, so it is generated locally and offered as a download instead of being shown in this
+          page.
+        </p>
+      </section>
+      <form
+        class="recap-settings"
+        onSubmit={event => {
+          event.preventDefault()
+          onGenerate()
+        }}>
+        <label>
+          Timezone
+          <input
+            type="text"
+            value={settings.timeZone}
+            placeholder="Europe/Paris"
+            onInput={event => onChange({ timeZone: event.currentTarget.value })}
+          />
+        </label>
+        <label>
+          Start date
+          <input
+            type="date"
+            value={settings.startDate ?? ''}
+            onInput={event => onChange({ startDate: event.currentTarget.value || undefined })}
+          />
+        </label>
+        <label>
+          End date
+          <input
+            type="date"
+            value={settings.endDate ?? ''}
+            onInput={event => onChange({ endDate: event.currentTarget.value || undefined })}
+          />
+        </label>
+        <label>
+          Session gap in minutes
+          <input
+            type="number"
+            min="1"
+            max="1440"
+            step="1"
+            value={settings.sessionGapMinutes}
+            onInput={event => onChange({ sessionGapMinutes: Number(event.currentTarget.value) })}
+          />
+        </label>
+        <label>
+          Context strategy
+          <select
+            value={settings.contextStrategy}
+            onChange={event => onChange({ contextStrategy: event.currentTarget.value as RecapContextStrategy })}>
+            <option value="rolling-window">Rolling window</option>
+            <option value="full">Full history</option>
+          </select>
+        </label>
+        <label>
+          Context messages
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={settings.contextMessages}
+            onInput={event => onChange({ contextMessages: Number(event.currentTarget.value) })}
+          />
+        </label>
+        <label>
+          Prompt style
+          <select
+            value={settings.promptStyle}
+            onChange={event => onChange({ promptStyle: event.currentTarget.value as RecapPromptStyle })}>
+            <option value="narrative">Narrative</option>
+            <option value="reflective">Reflective</option>
+            <option value="playful">Playful</option>
+          </select>
+        </label>
+        <label>
+          Context format
+          <select
+            value={settings.contextFormat}
+            onChange={event => onChange({ contextFormat: event.currentTarget.value as RecapContextFormat })}>
+            <option value="yaml">YAML</option>
+            <option value="toon">TOON</option>
+          </select>
+        </label>
+        <div class="recap-actions">
+          <button class="import-button" type="submit" disabled={state.kind === 'generating'}>
+            {state.kind === 'generating' ? 'Generating recap...' : 'Generate recap'}
+          </button>
+          <small>Dates are inclusive. Leave either date empty to use the available range.</small>
+        </div>
+      </form>
+      {state.kind === 'error' && <Status title="Recap unavailable" detail={state.message} error />}
+      {state.kind === 'ready' && (
+        <section class="recap-results">
+          <a class="recap-download" href={state.contextUrl} download={`recap-context.${state.contextFormat}`}>
+            <span>Download recap context</span>
+            <strong>recap-context.{state.contextFormat}</strong>
+            <small>
+              {state.contextFormat.toUpperCase()} file, {formatByteSize(state.contextSize)}
+            </small>
+          </a>
+          <section class="recap-prompt-card">
+            <div class="chart-heading">
+              <div>
+                <p class="eyebrow">Example prompt</p>
+                <h2>Use this with the downloaded context.</h2>
+              </div>
+              <CopyRecapPrompt prompt={state.prompt} />
+            </div>
+            <pre class="recap-prompt">{state.prompt}</pre>
+          </section>
+        </section>
+      )}
+    </>
+  )
+}
+function CopyRecapPrompt({ prompt }: { prompt: string }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopyState('copied')
+    } catch {
+      setCopyState('failed')
+    }
+  }
+
+  return (
+    <button class="recap-copy" type="button" onClick={() => void copyPrompt()}>
+      {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy prompt'}
+    </button>
   )
 }
 function Accordion({
@@ -1600,7 +1866,9 @@ function readRoute(): Route {
         : { page: 'conversations' }
       : page === 'about'
         ? { page: 'about' }
-        : { page: 'overview' }
+        : page === 'recap'
+          ? { page: 'recap' }
+          : { page: 'overview' }
 }
 function temporalRoute(filter: TemporalMessageFilter): string {
   return `#/patterns/time/${filter.role}/${filter.weekday ?? 'all'}/${filter.hour}`
@@ -1626,6 +1894,11 @@ function formatShare(value: number): string {
 }
 function formatNumber(value: number): string {
   return value.toLocaleString()
+}
+function formatByteSize(value: number): string {
+  if (value < 1_024) return `${value.toLocaleString()} B`
+  if (value < 1_024 * 1_024) return `${(value / 1_024).toFixed(1)} KB`
+  return `${(value / (1_024 * 1_024)).toFixed(1)} MB`
 }
 function formatDate(value: string): string {
   return new Date(value).toLocaleString()
@@ -1824,6 +2097,7 @@ type WorkerMessage =
   | { type: 'conversation-repetitions'; requestId: number; id: string; analysis: RepeatedPhraseAnalysis }
   | ({ type: 'temporal-slice'; requestId: number } & TemporalPage)
   | { type: 'temporal-content'; requestId: number; contents: MessageContent[] }
+  | { type: 'recap'; requestId: number; context: Blob; contextFormat: RecapContextFormat; prompt: string }
   | {
       type: 'failure'
       requestId: number
@@ -1836,5 +2110,6 @@ type WorkerMessage =
         | 'conversation-repetitions'
         | 'temporal-slice'
         | 'temporal-content'
+        | 'recap'
       message: string
     }

@@ -54,7 +54,7 @@ pnpm build:dashboard
 pnpm --filter @chatgpt-export-reader/dashboard preview
 ```
 
-It provides local text-volume analytics, daily and temporal-rhythm views, configurable observed sessions, concentration rankings, and a paginated conversation evidence explorer with literal search and on-demand message text. The static dashboard deploys to GitHub Pages on pushes to `main`.
+It provides local text-volume analytics, daily and temporal-rhythm views, configurable observed sessions, concentration rankings, a paginated conversation evidence explorer with literal search and on-demand message text, and a recap page that generates a downloadable YAML or TOON evidence file plus an example prompt. The static dashboard deploys to GitHub Pages on pushes to `main`.
 
 ## Step 3
 

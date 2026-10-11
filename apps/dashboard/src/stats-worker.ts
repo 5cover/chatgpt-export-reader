@@ -1,6 +1,7 @@
 import { JSONParser } from '@streamparser/json'
 import { Unzip, UnzipInflate } from 'fflate'
 import {
+  buildRecap,
   collectAnalytics,
   collectConversationDetail,
   collectRepeatedPhrases,
@@ -14,11 +15,17 @@ import {
   type ConversationDetail,
   type MessageContent,
   type RepeatedPhraseAnalysis,
+  type RecapContextFormat,
+  type RecapContextStrategy,
+  type RecapPromptStyle,
   type TemporalConversation,
   type TemporalMessageEvidence,
   type TemporalMessageFilter,
   type TemporalMessageSlice,
   type TurnPage,
+  createRecapPrompt,
+  serializeRecapToon,
+  serializeRecapYaml,
 } from '@chatgpt-export-reader/core'
 
 type SharedOptions = { localTimeZone: string; startDate?: string; sessionGapMinutes: number }
@@ -77,6 +84,18 @@ type TemporalContentRequest = {
   cacheKey: string
   ids: string[]
 }
+type RecapRequest = {
+  type: 'recap'
+  requestId: number
+  timeZone: string
+  startDate?: string
+  endDate?: string
+  sessionGapMinutes: number
+  contextStrategy: RecapContextStrategy
+  contextMessages: number
+  promptStyle: RecapPromptStyle
+  contextFormat: RecapContextFormat
+}
 type Request =
   | ImportRequest
   | StatisticsRequest
@@ -86,6 +105,7 @@ type Request =
   | ConversationRepetitionsRequest
   | TemporalSliceRequest
   | TemporalContentRequest
+  | RecapRequest
 
 type Progress = {
   type: 'progress'
@@ -144,6 +164,13 @@ type TemporalContent = {
   requestId: number
   contents: MessageContent[]
 }
+type Recap = {
+  type: 'recap'
+  requestId: number
+  context: Blob
+  contextFormat: RecapContextFormat
+  prompt: string
+}
 type Failure = { type: 'failure'; requestId: number; operation: Request['type']; message: string }
 
 const worker = globalThis
@@ -170,7 +197,9 @@ worker.addEventListener('message', (event: MessageEvent<Request>) => {
                 ? loadConversationRepeatedPhrases(request)
                 : request.type === 'temporal-slice'
                   ? loadTemporalSlice(request)
-                  : loadTemporalContent(request)
+                  : request.type === 'temporal-content'
+                    ? loadTemporalContent(request)
+                    : generateRecap(request)
   void operation.catch(error =>
     worker.postMessage({
       type: 'failure',
@@ -367,6 +396,25 @@ async function recalculateStatistics(request: StatisticsRequest): Promise<void> 
     startDate: request.startDate,
     sessionGapMinutes: request.sessionGapMinutes,
   } satisfies Statistics)
+}
+
+async function generateRecap(request: RecapRequest): Promise<void> {
+  const document = buildRecap(retainedChats, {
+    timeZone: request.timeZone,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    sessionGapMinutes: request.sessionGapMinutes,
+    context: { strategy: request.contextStrategy, maxMessages: request.contextMessages },
+    promptStyle: request.promptStyle,
+  })
+  const content = request.contextFormat === 'yaml' ? serializeRecapYaml(document) : serializeRecapToon(document)
+  worker.postMessage({
+    type: 'recap',
+    requestId: request.requestId,
+    context: new Blob([content], { type: request.contextFormat === 'yaml' ? 'text/yaml' : 'text/plain' }),
+    contextFormat: request.contextFormat,
+    prompt: createRecapPrompt(request.promptStyle, request.contextFormat),
+  } satisfies Recap)
 }
 
 async function loadConversationDetail(request: DetailRequest): Promise<void> {
