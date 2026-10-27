@@ -37,8 +37,11 @@ chatgpt-export-reader recap conversations.json \
   --fs-path out/recap \
   --time-zone Europe/Paris \
   --start-date 2026-01-01 \
-  --end-date 2026-03-31
+  --end-date 2026-03-31 \
+  --repeated-phrase-percentile 90
 ```
+
+Recap evidence keeps repeated phrases at or above the selected score percentile for each role. The default is 90; use a value from 0 to 100 to adjust it.
 
 Run `chatgpt-export-reader --help` to list commands and options. Run
 `chatgpt-export-reader formats` to list supported input and artifact formats.

@@ -47,7 +47,7 @@ const analytics = collectAnalytics(chats, {
 
 `endDate` is also inclusive. Analytics validates both calendar dates and rejects a reversed range.
 
-`deriveAnalyticsMetrics` turns canonical analytics into shared presentation metrics: daily means and medians, prompt distributions, output concentration, and session profile metrics. The dashboard and recap builder consume this API, so their reported values stay aligned.
+`deriveAnalyticsMetrics` turns canonical analytics into shared presentation metrics: daily means and medians, prompt distributions, output concentration, and session profile metrics. Session starts are a sparse hour-keyed record containing only hours with starts. The dashboard and recap builder consume this API, so their reported values stay aligned.
 
 ```ts
 import { deriveAnalyticsMetrics } from "@chatgpt-export-reader/core";
@@ -79,6 +79,7 @@ const recap = buildRecap(chats, {
   startDate: "2026-01-01",
   endDate: "2026-03-31",
   context: { strategy: "rolling-window", maxMessages: 20 },
+  repeatedPhrases: { minimumScorePercentile: 90 },
 });
 
 const contextYaml = serializeRecapYaml(recap);
@@ -87,7 +88,9 @@ const prompt = createRecapPrompt("reflective");
 
 Use `context.strategy: "full"` when every earlier timestamped message in each included conversation is needed. The default `rolling-window` mode preserves the beginning and the messages immediately before the range, with explicit omission markers. Untimestamped messages are not placed in recap evidence and are counted in each conversation's metadata.
 
-`serializeRecapYaml` compacts the transport format without changing the in-memory analytics API: text totals use `wc: words characters`, ordinary message timestamps use `at`, and document-local numeric IDs replace source GUIDs consistently across references. Default message values such as `weight: 1` and empty models or thought lists are omitted.
+`serializeRecapYaml` compacts the transport format without changing the in-memory analytics API: text totals use `wc: words characters`, ordinary message timestamps use `at`, and document-local numeric IDs replace source GUIDs consistently across references. Serialized evidence uses ordered ID-keyed maps: conversations and selected messages omit their repeated `id` fields, pre-window context uses `_omitted` for rolling-window gaps, root messages omit empty parents, and branch paths are not serialized. Recap transport omits empty analytics hour cells. Default message values such as `weight: 1` and empty models or thought lists are omitted.
+
+Repeated phrases remain unchanged in the general analytics API. Recap documents filter each role's ranked, capped phrase list at `repeatedPhrases.minimumScorePercentile`, which defaults to 90 and retains all ties at the interpolated score threshold. The chosen percentile is recorded in recap selection metadata.
 
 Use `serializeRecapToon(recap)` for the same compact evidence document in TOON. Pass `"toon"` as the second argument to `createRecapPrompt` when the generated prompt should identify TOON as its evidence format.
 

@@ -20,6 +20,9 @@ export type RecapOptions = AnalyticsOptions & {
     strategy?: RecapContextStrategy
     maxMessages?: number
   }
+  repeatedPhrases?: {
+    minimumScorePercentile?: number
+  }
   promptStyle?: RecapPromptStyle
 }
 
@@ -60,6 +63,7 @@ export type RecapDocument = {
     requestedDateRange: { startDate: string; endDate: string }
     resolvedDateRange: { startDate: string; endDate: string }
     context: { strategy: RecapContextStrategy; maxMessages: number }
+    repeatedPhrases: { minimumScorePercentile: number }
   }
   analytics: AnalyticsStatistics & { repeatedPhrases: RepeatedPhraseAnalysis }
   metrics: RecapDerivedMetrics
@@ -103,6 +107,13 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
   const maxMessages = options.context?.maxMessages ?? 20
   if (!Number.isInteger(maxMessages) || maxMessages < 0)
     throw new RangeError('context.maxMessages must be a non-negative integer.')
+  const minimumScorePercentile = options.repeatedPhrases?.minimumScorePercentile ?? 90
+  if (
+    !Number.isFinite(minimumScorePercentile) ||
+    minimumScorePercentile < 0 ||
+    minimumScorePercentile > 100
+  )
+    throw new RangeError('repeatedPhrases.minimumScorePercentile must be a number from 0 to 100.')
 
   const analyticsOptions: AnalyticsOptions = {
     timeZone,
@@ -113,7 +124,10 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
   const analytics = collectAnalytics(source, analyticsOptions)
   if (analytics.summary.messages === 0)
     throw new RangeError(`no timestamped messages fall between ${resolvedStart} and ${resolvedEnd} in ${timeZone}.`)
-  const repeatedPhrases = collectRepeatedPhrases(source, analyticsOptions)
+  const repeatedPhrases = filterRepeatedPhrases(
+    collectRepeatedPhrases(source, analyticsOptions),
+    minimumScorePercentile
+  )
 
   return {
     schema: 'chatgpt-export-reader/recap/v1',
@@ -122,6 +136,7 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
       requestedDateRange: { startDate: requestedStart, endDate: requestedEnd },
       resolvedDateRange: { startDate: resolvedStart, endDate: resolvedEnd },
       context: { strategy, maxMessages },
+      repeatedPhrases: { minimumScorePercentile },
     },
     analytics: { ...analytics, repeatedPhrases },
     metrics: deriveAnalyticsMetrics(analytics, { timeZone }),
@@ -129,6 +144,29 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
       .map(chat => evidenceFor(chat, resolvedStart, resolvedEnd, timeZone, strategy, maxMessages))
       .filter((conversation): conversation is RecapConversationEvidence => conversation !== undefined),
   }
+}
+
+function filterRepeatedPhrases(
+  analysis: RepeatedPhraseAnalysis,
+  minimumScorePercentile: number
+): RepeatedPhraseAnalysis {
+  return {
+    user: filterRolePhrases(analysis.user, minimumScorePercentile),
+    assistant: filterRolePhrases(analysis.assistant, minimumScorePercentile),
+  }
+}
+
+function filterRolePhrases<T extends { score: number }>(
+  phrases: T[],
+  minimumScorePercentile: number
+): T[] {
+  if (phrases.length === 0) return []
+  const scores = phrases.map(phrase => phrase.score).sort((left, right) => left - right)
+  const position = (scores.length - 1) * (minimumScorePercentile / 100)
+  const lower = Math.floor(position)
+  const upper = Math.ceil(position)
+  const threshold = scores[lower]! + (scores[upper]! - scores[lower]!) * (position - lower)
+  return phrases.filter(phrase => phrase.score >= threshold)
 }
 
 export function serializeRecapYaml(document: RecapDocument): string {
@@ -142,7 +180,7 @@ export function serializeRecapYaml(document: RecapDocument): string {
 }
 
 export function serializeRecapToon(document: RecapDocument): string {
-  const toon = encode(compactForTransport(document))
+  const toon = unquoteNumericToonKeys(encode(compactForTransport(document)))
   return toon.endsWith('\n') ? toon : `${toon}\n`
 }
 
@@ -165,6 +203,10 @@ ${themes[style]}
 - Treat the accompanying ${contextFormat.toUpperCase()} document as evidence.
 - Distinguish \`preWindowContext\` from in-range \`messages\`.
 - Use statistics as signals, never as absolute personality claims.
+
+## Evidence layout
+
+Serialized \`conversations\`, \`messages\`, and \`preWindowContext\` are ordered records keyed by compact numeric IDs, not arrays. Record insertion order is chronological. Message IDs are their record keys; numeric \`parentId\` values reconstruct branches, and root messages omit \`parentId\`. \`preWindowContext._omitted\` marks a rolling-window gap and gives its skipped-message count. Analytics hour cells are sparse, so an absent cell has neither messages nor session starts. Repeated phrases are filtered for recap export at the percentile recorded in \`selection.repeatedPhrases\`.
 
 ## Goals and non-goals
 
@@ -648,12 +690,66 @@ function compactForTransport(document: RecapDocument): unknown {
       ids.id(item.id)
     }
   }
-  return compactValue(document, ids)
+  return compactValue(
+    {
+      ...document,
+      analytics: {
+        ...document.analytics,
+        hours: document.analytics.hours.filter(cell => cell.messages > 0 || cell.sessionsStarted > 0),
+      },
+      conversations: compactEvidence(document.conversations, ids),
+    },
+    ids
+  )
+}
+
+function compactEvidence(
+  conversations: RecapConversationEvidence[],
+  ids: RecapIdGenerator
+): Map<number, unknown> {
+  const compacted = new Map<number, unknown>()
+  for (const conversation of conversations) {
+    compacted.set(ids.id(conversation.id), {
+      title: conversation.title,
+      omittedUntimestampedMessages: conversation.omittedUntimestampedMessages,
+      preWindowContext: compactContext(conversation.preWindowContext, ids),
+      messages: compactMessages(conversation.messages, ids),
+    })
+  }
+  return compacted
+}
+
+function compactContext(
+  context: Array<RecapMessage | RecapOmission>,
+  ids: RecapIdGenerator
+): Map<number | '_omitted', unknown> {
+  const compacted = new Map<number | '_omitted', unknown>()
+  for (const item of context) {
+    if ('skippedMessages' in item) {
+      compacted.set('_omitted', { skippedMessages: item.skippedMessages })
+      continue
+    }
+    compacted.set(ids.id(item.id), compactEvidenceMessage(item))
+  }
+  return compacted
+}
+
+function compactMessages(messages: RecapMessage[], ids: RecapIdGenerator): Map<number, unknown> {
+  const compacted = new Map<number, unknown>()
+  for (const message of messages) compacted.set(ids.id(message.id), compactEvidenceMessage(message))
+  return compacted
+}
+
+function compactEvidenceMessage(message: RecapMessage): Omit<RecapMessage, 'id' | 'branchPath'> {
+  const { id: _id, branchPath: _branchPath, ...compacted } = message
+  return compacted
 }
 
 function compactValue(value: unknown, ids: RecapIdGenerator): unknown {
   if (isTextMetrics(value)) return { wc: `${value.words} ${value.characters}` } satisfies YamlTextMetrics
   if (Array.isArray(value)) return value.map(item => compactValue(item, ids))
+  if (value instanceof Map)
+    return new Map([...value].map(([key, item]) => [key, compactValue(item, ids)]))
   if (value === undefined || value === null) return ''
   if (typeof value !== 'object') return value
 
@@ -663,6 +759,7 @@ function compactValue(value: unknown, ids: RecapIdGenerator): unknown {
     if (childKey === 'model' && (childValue === '' || childValue === undefined)) continue
     if (childKey === 'weight' && childValue === 1) continue
     if (childKey === 'thoughts' && Array.isArray(childValue) && childValue.length === 0) continue
+    if (childKey === 'parentId' && childValue === '') continue
     if (childKey === 'textMetrics' && isTextMetrics(childValue)) {
       compacted.wc = `${childValue.words} ${childValue.characters}`
       continue
@@ -674,6 +771,15 @@ function compactValue(value: unknown, ids: RecapIdGenerator): unknown {
     compacted[childKey] = compactValue(childValue, ids)
   }
   return compacted
+}
+
+/**
+ * TOON accepts bare numeric keys, but its encoder quotes every object key after
+ * normalizing Map keys to strings. Keep compact evidence IDs visibly numeric,
+ * matching the YAML transport and numeric parent references.
+ */
+function unquoteNumericToonKeys(toon: string): string {
+  return toon.replace(/^(\s*)"(\d+)":/gm, '$1$2:')
 }
 
 function isTextMetrics(value: unknown): value is TextMetrics {

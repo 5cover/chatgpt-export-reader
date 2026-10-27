@@ -37,7 +37,7 @@ test("derived metrics are the shared source for recap and dashboard consumers", 
   assert.deepEqual(metrics.daily.prompts, { mean: 1, median: 1 });
   assert.deepEqual(metrics.promptDistribution, [{ from: 0, to: 0, days: 0 }, { from: 1, to: 1, days: 5 }]);
   assert.equal(metrics.outputConcentration.topConversationShares[0].share, 0.2);
-  assert.deepEqual(metrics.sessionStartsByHour.slice(8, 9), [5]);
+  assert.deepEqual(metrics.sessionStartsByHour, { 8: 5 });
   assert.deepEqual(metrics.sessionContinuation[0], { prompts: 1, reached: 5, continued: 0, rate: 0 });
 });
 const chat = (id, messages) => ({
@@ -113,9 +113,14 @@ test("rolling context preserves branches, applies independent budgets, and marks
   assert.equal(one.messages[0].parentId, "");
   assert.equal(one.messages[0].branchPath, "3");
   assert.equal(two.preWindowContext.length, 1);
+
+  const parsed = parse(serializeRecapYaml(recap));
+  const serializedOne = Object.values(parsed.conversations).find(value => value.title === "one title");
+  assert.equal(serializedOne.preWindowContext._omitted.skippedMessages, 2);
+  assert.equal("kind" in serializedOne.preWindowContext._omitted, false);
 });
 
-test("YAML and TOON are compact, equivalent, and timestamped locally", () => {
+test("YAML and TOON serialize compact ID-keyed evidence equivalently", () => {
   const source = [chat("one", [message("one", "assistant", "first line\nsecond line", Date.UTC(2026, 9, 11, 8, 30))])];
   source[0].messages[0].thoughts = [{ summary: "plan", content: "reasoning", chunks: ["reasoning"] }];
   const recap = buildRecap(source, { timeZone: "Europe/Paris" });
@@ -126,15 +131,29 @@ test("YAML and TOON are compact, equivalent, and timestamped locally", () => {
   assert.match(yaml, /text: \|-\n/);
   assert.match(yaml, /sun 2026-10-11T10:30\+02:00/);
   assert.match(yaml, /wc: 4 22/);
-  assert.equal(typeof parsed.conversations[0].id, "number");
-  assert.equal(typeof parsed.conversations[0].messages[0].id, "number");
-  assert.equal(parsed.conversations[0].messages[0].at, "sun 2026-10-11T10:30+02:00");
-  assert.equal("timestamp" in parsed.conversations[0].messages[0], false);
-  assert.equal("textMetrics" in parsed.conversations[0].messages[0], false);
-  assert.equal("weight" in parsed.conversations[0].messages[0], false);
-  assert.equal("kind" in parsed.conversations[0].messages[0], false);
-  assert.equal("model" in parsed.conversations[0].messages[0], false);
-  assert.ok(parsed.conversations[0].messages[0].thoughts);
+  const [conversationId] = Object.keys(parsed.conversations);
+  const conversation = parsed.conversations[conversationId];
+  const [messageId] = Object.keys(conversation.messages);
+  const selected = conversation.messages[messageId];
+  const evidenceYaml = yaml.slice(yaml.lastIndexOf("\nconversations:\n"));
+  const evidenceToon = toon.slice(toon.lastIndexOf("\nconversations:\n"));
+  assert.match(conversationId, /^\d+$/);
+  assert.match(messageId, /^\d+$/);
+  assert.match(evidenceYaml, /\n +\d+:\n/);
+  assert.doesNotMatch(evidenceYaml, /\n +"\d+":/);
+  assert.match(evidenceToon, /\n +\d+:/);
+  assert.doesNotMatch(evidenceToon, /\n +"\d+":/);
+  assert.equal(selected.at, "sun 2026-10-11T10:30+02:00");
+  assert.equal("id" in conversation, false);
+  assert.equal("id" in selected, false);
+  assert.equal("parentId" in selected, false);
+  assert.equal("branchPath" in selected, false);
+  assert.equal("timestamp" in selected, false);
+  assert.equal("textMetrics" in selected, false);
+  assert.equal("weight" in selected, false);
+  assert.equal("kind" in selected, false);
+  assert.equal("model" in selected, false);
+  assert.ok(selected.thoughts);
   assert.equal(yaml.includes("null"), false);
   assert.deepEqual(decode(toon), parsed);
   assert.match(toon, /conversations\[1\]/);
@@ -147,20 +166,61 @@ test("YAML and TOON are compact, equivalent, and timestamped locally", () => {
   );
 });
 
-test("compact YAML IDs are numeric and retain message parent references", () => {
+test("compact evidence maps retain numeric message parent references", () => {
   const root = message("message-guid-root-0123456789", "user", "parent", at(1), [
     message("message-guid-child-0123456789", "assistant", "child", at(1, 1)),
   ]);
   const source = [chat("conversation-guid-0123456789", [root])];
   source[0].title = "Example conversation";
-  const yaml = serializeRecapYaml(buildRecap(source));
+  const yaml = serializeRecapYaml(buildRecap(source, {
+    startDate: "2026-01-01",
+    endDate: "2026-01-01",
+    context: { maxMessages: 0 },
+  }));
   const parsed = parse(yaml);
-  const [parent, child] = parsed.conversations[0].messages;
+  const conversation = Object.values(parsed.conversations)[0];
+  const [parentId, childId] = Object.keys(conversation.messages);
+  const parent = conversation.messages[parentId];
+  const child = conversation.messages[childId];
 
-  assert.equal(typeof parent.id, "number");
-  assert.equal(typeof child.id, "number");
-  assert.equal(child.parentId, parent.id);
+  assert.match(parentId, /^\d+$/);
+  assert.equal(child.parentId, Number(parentId));
+  assert.equal("parentId" in parent, false);
+  assert.equal("branchPath" in child, false);
   assert.equal(typeof parsed.analytics.conversations[0].id, "number");
   assert.equal(yaml.includes("message-guid-root-0123456789"), false);
   assert.equal(yaml.includes("conversation-guid-0123456789"), false);
+});
+
+test("recap transport excludes empty analytics hours and records repeated phrase filtering", () => {
+  const source = [chat("one", [
+    message("one", "user", "alpha beta alpha beta alpha beta gamma delta gamma delta gamma delta", at(1, 8)),
+    message("two", "assistant", "reply phrase reply phrase reply phrase other words other words", at(1, 9)),
+  ])];
+  const unfiltered = buildRecap(source, { repeatedPhrases: { minimumScorePercentile: 0 } });
+  const defaultFiltered = buildRecap(source);
+  const recap = buildRecap(source, { repeatedPhrases: { minimumScorePercentile: 100 } });
+  const parsed = parse(serializeRecapYaml(recap));
+
+  assert.deepEqual(recap.selection.repeatedPhrases, { minimumScorePercentile: 100 });
+  assert.equal(unfiltered.analytics.repeatedPhrases.user.length, 4);
+  assert.equal(recap.analytics.repeatedPhrases.user.length, 2);
+  assert.ok(recap.analytics.repeatedPhrases.user.every(phrase => phrase.score === 8));
+  assert.deepEqual(defaultFiltered.analytics.repeatedPhrases, recap.analytics.repeatedPhrases);
+  assert.deepEqual(defaultFiltered.selection.repeatedPhrases, { minimumScorePercentile: 90 });
+  assert.equal(parsed.analytics.hours.length, 2);
+  assert.ok(parsed.analytics.hours.every(cell => cell.messages > 0 || cell.sessionsStarted > 0));
+  assert.deepEqual(parsed.metrics.sessionStartsByHour, { 8: 1 });
+});
+
+test("recap validates repeated phrase score percentiles", () => {
+  const source = [chat("one", [message("one", "user", "message", at(1))])];
+  assert.throws(
+    () => buildRecap(source, { repeatedPhrases: { minimumScorePercentile: -1 } }),
+    /repeatedPhrases.minimumScorePercentile/,
+  );
+  assert.throws(
+    () => buildRecap(source, { repeatedPhrases: { minimumScorePercentile: 101 } }),
+    /repeatedPhrases.minimumScorePercentile/,
+  );
 });

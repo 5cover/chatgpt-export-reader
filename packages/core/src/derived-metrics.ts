@@ -34,7 +34,7 @@ export type AnalyticsDerivedMetrics = {
   outputConcentration: OutputConcentration;
   sessionPromptCounts: { median: number; over25: number; over100: number };
   sessionDepth: SessionDepthBin[];
-  sessionStartsByHour: number[];
+  sessionStartsByHour: Partial<Record<number, number>>;
   sessionContinuation: SessionContinuation[];
 };
 
@@ -90,12 +90,21 @@ export function deriveAnalyticsMetrics(
         (session) => session.prompts >= from && (to === null || session.prompts <= to),
       ).length,
     })),
-    sessionStartsByHour: Array.from({ length: 24 }, (_, hour) =>
-      statistics.sessions.filter((session) => hourInTimeZone(session.startAt, options.timeZone) === hour)
-        .length,
-    ),
+    sessionStartsByHour: sessionStartsByHour(statistics, options.timeZone),
     sessionContinuation: deriveSessionContinuation(sessionPrompts),
   };
+}
+
+function sessionStartsByHour(
+  statistics: AnalyticsStatistics,
+  timeZone: string,
+): Partial<Record<number, number>> {
+  const starts: Partial<Record<number, number>> = {};
+  for (const session of statistics.sessions) {
+    const hour = hourInTimeZone(session.startAt, timeZone);
+    starts[hour] = (starts[hour] ?? 0) + 1;
+  }
+  return starts;
 }
 
 export function dailyMetricValue(day: AnalyticsDay, metric: DailyMetric): number {

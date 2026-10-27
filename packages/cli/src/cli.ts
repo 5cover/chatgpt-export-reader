@@ -54,6 +54,7 @@ type RecapCommandOptions = CommonOptions & {
   contextMessages: string;
   recapStyle: string;
   contextFormat: string;
+  repeatedPhrasePercentile: string;
 };
 
 const exportFormats = [
@@ -123,6 +124,11 @@ configureCommonOptions(
   .option("--context-messages <number>", "Maximum preceding messages per conversation", "20")
   .option("--recap-style <name>", "Prompt style: narrative, reflective, or playful", "narrative")
   .option("--context-format <yaml|toon>", "Recap context serialization", "yaml")
+  .option(
+    "--repeated-phrase-percentile <0-100>",
+    "Minimum repeated-phrase score percentile for recap evidence",
+    "90",
+  )
   .showHelpAfterError()
   .action(async (input, options) => {
     const recapOptions: RecapCommandOptions = options;
@@ -141,6 +147,11 @@ configureCommonOptions(
           context: {
             strategy: recapStrategy(recapOptions.contextStrategy),
             maxMessages: recapContextMessages(recapOptions.contextMessages),
+          },
+          repeatedPhrases: {
+            minimumScorePercentile: recapRepeatedPhrasePercentile(
+              recapOptions.repeatedPhrasePercentile,
+            ),
           },
           promptStyle: recapStyle(recapOptions.recapStyle),
         },
@@ -278,6 +289,13 @@ function recapContextMessages(value: string): number | undefined {
   if (number === undefined) return undefined;
   if (!Number.isInteger(number) || number < 0)
     throw new Error("--context-messages must be a non-negative integer.");
+  return number;
+}
+
+function recapRepeatedPhrasePercentile(value: string): number {
+  const number = numberOption(value, "--repeated-phrase-percentile");
+  if (number === undefined || number < 0 || number > 100)
+    throw new Error("--repeated-phrase-percentile must be a number from 0 to 100.");
   return number;
 }
 

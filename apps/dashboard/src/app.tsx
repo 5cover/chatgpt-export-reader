@@ -1607,12 +1607,13 @@ function SessionDistribution({ bins }: { bins: AnalyticsDerivedMetrics['sessionD
     />
   )
 }
-function SessionStarts({ startsByHour }: { startsByHour: readonly number[] }) {
+function SessionStarts({ startsByHour }: { startsByHour: Partial<Record<number, number>> }) {
+  const hours = Object.keys(startsByHour).map(Number).sort((left, right) => left - right)
   return (
     <MiniBars
       title="Session starts"
-      labels={startsByHour.map((_, hour) => String(hour).padStart(2, '0'))}
-      values={startsByHour}
+      labels={hours.map(hour => String(hour).padStart(2, '0'))}
+      values={hours.map(hour => startsByHour[hour] ?? 0)}
       note="Observed session starts by hour."
     />
   )
