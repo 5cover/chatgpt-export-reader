@@ -25,7 +25,6 @@ test("recap emits separate filtered YAML artifacts by default", async () => {
       "--start-date", "2025-10-11",
       "--end-date", "2025-10-11",
       "--context-messages", "1",
-      "--recap-style", "reflective",
       "--repeated-phrase-percentile", "100",
     ]);
     assert.deepEqual((await readdir(output)).sort(), ["recap-context.yaml", "recap-prompt.md"]);
@@ -34,7 +33,7 @@ test("recap emits separate filtered YAML artifacts by default", async () => {
     assert.match(context, /included title/);
     assert.match(context, /minimumScorePercentile: 100/);
     assert.doesNotMatch(context, /excluded title/);
-    assert.match(prompt, /thoughtful retrospective/);
+    assert.match(prompt, /Usage intensity and time/);
     assert.match(prompt, /accompanying YAML/);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -65,8 +64,7 @@ test("recap emits TOON context and updates its prompt", async () => {
 
 test("recap CLI reports invalid scoped options", async () => {
   await assert.rejects(
-    run(["recap", "ignored.json", "--recap-style", "unknown"]),
-    /unknown recap style: unknown/,
+    run(["recap", "ignored.json", "--recap-style", "narrative"]),
   );
   await assert.rejects(
     run(["recap", "ignored.json", "--context-messages", "-1"]),

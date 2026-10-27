@@ -153,15 +153,17 @@ test("YAML and TOON serialize compact ID-keyed evidence equivalently", () => {
   assert.equal("weight" in selected, false);
   assert.equal("kind" in selected, false);
   assert.equal("model" in selected, false);
+  assert.deepEqual(recap.analytics.summary.other, { words: 0, characters: 0 });
+  assert.equal("other" in parsed.analytics.summary, false);
   assert.ok(selected.thoughts);
   assert.equal(yaml.includes("null"), false);
   assert.deepEqual(decode(toon), parsed);
   assert.match(toon, /conversations\[1\]/);
-  assert.match(createRecapPrompt("playful"), /awards-and-highlights/);
-  assert.match(createRecapPrompt("playful", "toon"), /accompanying TOON/);
-  assert.throws(() => createRecapPrompt("unknown"), /unknown recap prompt style/);
+  assert.match(createRecapPrompt(), /Usage intensity and time/);
+  assert.match(createRecapPrompt(), /what tends to produce the next turn/);
+  assert.match(createRecapPrompt("toon"), /accompanying TOON/);
   assert.throws(
-    () => createRecapPrompt("narrative", "unknown"),
+    () => createRecapPrompt("unknown"),
     /unknown recap context format/,
   );
 });
@@ -223,4 +225,13 @@ test("recap validates repeated phrase score percentiles", () => {
     () => buildRecap(source, { repeatedPhrases: { minimumScorePercentile: 101 } }),
     /repeatedPhrases.minimumScorePercentile/,
   );
+});
+
+test("recap transport retains nonzero other text metrics", () => {
+  const source = [chat("one", [message("one", "tool", "tool output", at(1))])];
+  const recap = buildRecap(source);
+  const parsed = parse(serializeRecapYaml(recap));
+
+  assert.deepEqual(recap.analytics.summary.other, { words: 2, characters: 11 });
+  assert.deepEqual(parsed.analytics.summary.other, { wc: "2 11" });
 });

@@ -13,7 +13,6 @@ import type { Chat, Message } from './types.js'
 
 export type RecapContextStrategy = 'full' | 'rolling-window'
 export type RecapContextFormat = 'yaml' | 'toon'
-export type RecapPromptStyle = 'narrative' | 'reflective' | 'playful'
 
 export type RecapOptions = AnalyticsOptions & {
   context?: {
@@ -23,7 +22,6 @@ export type RecapOptions = AnalyticsOptions & {
   repeatedPhrases?: {
     minimumScorePercentile?: number
   }
-  promptStyle?: RecapPromptStyle
 }
 
 export type RecapMessage = {
@@ -184,21 +182,10 @@ export function serializeRecapToon(document: RecapDocument): string {
   return toon.endsWith('\n') ? toon : `${toon}\n`
 }
 
-export function createRecapPrompt(
-  style: RecapPromptStyle = 'narrative',
-  contextFormat: RecapContextFormat = 'yaml'
-): string {
-  const themes: Record<RecapPromptStyle, string> = {
-    narrative: 'Write a warm, chronological story of the period.',
-    reflective: 'Write a thoughtful retrospective that balances patterns with uncertainty.',
-    playful: 'Write a light awards-and-highlights recap.',
-  }
-  if (!(style in themes)) throw new RangeError(`unknown recap prompt style: ${style}`)
+export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml'): string {
   if (contextFormat !== 'yaml' && contextFormat !== 'toon')
     throw new RangeError(`unknown recap context format: ${contextFormat}`)
   return `# ChatGPT Usage Recap: Investigator Prompt
-
-${themes[style]}
 
 - Treat the accompanying ${contextFormat.toUpperCase()} document as evidence.
 - Distinguish \`preWindowContext\` from in-range \`messages\`.
@@ -212,7 +199,7 @@ Serialized \`conversations\`, \`messages\`, and \`preWindowContext\` are ordered
 
 Your goal is to produce a thoughtful, personalized interpretation of how this user has used ChatGPT during the period represented in the supplied context.
 
-This is not a usage dashboard. Tthe context may already contain extensive deterministic statistics. Do not simply translate those statistics into prose.
+This is not a usage dashboard. The context may already contain extensive deterministic statistics. Do not simply translate those statistics into prose.
 
 This is not a "Wrapped" summary. Do not default to rankings, superlatives, favorite topics, busiest periods, top categories, or a predetermined collection of highlights.
 
@@ -399,6 +386,16 @@ These are possibilities, not expected findings.
 
 Do not impose a developmental narrative when the evidence instead suggests stability, discontinuity, or unrelated episodes.
 
+## Usage intensity and time
+
+Investigate what actually made the user's usage intensive during the period. Do not treat message count, word count, or session count as an explanation by itself.
+
+Use intermediate message timestamps and session records to identify concentrated conversations, sustained sequences, pauses, returns, and observed elapsed spans. These can show how a conversation occupied part of the period, but observed span is not a direct measure of time spent reading, thinking, or working away from ChatGPT.
+
+Ask what tends to produce the next turn. Look for loops that keep a conversation going: a response that creates a new problem, a draft that invites revision, an implementation that exposes a failure, a comparison that opens a new distinction, or another mechanism supported by the evidence.
+
+Distinguish high-volume interaction from sustained work. Explain what the user appears to be spending attention on, how the model participates, and why particular conversations continue, while preserving uncertainty where the record does not establish an answer.
+
 ## Contradictions and anomalies
 
 Do not focus exclusively on dominant patterns.
@@ -525,7 +522,7 @@ Try to understand what they have made the tool into: how it enters their activit
 
 Then tell that story at the level of certainty the evidence deserves.
 
-Adress the user directly in the second person.`
+Address the user directly in the second person.`
 }
 
 function evidenceFor(
@@ -759,6 +756,7 @@ function compactValue(value: unknown, ids: RecapIdGenerator): unknown {
     if (childKey === 'model' && (childValue === '' || childValue === undefined)) continue
     if (childKey === 'weight' && childValue === 1) continue
     if (childKey === 'thoughts' && Array.isArray(childValue) && childValue.length === 0) continue
+    if (childKey === 'other' && isEmptyTextMetrics(childValue)) continue
     if (childKey === 'parentId' && childValue === '') continue
     if (childKey === 'textMetrics' && isTextMetrics(childValue)) {
       compacted.wc = `${childValue.words} ${childValue.characters}`
@@ -786,6 +784,10 @@ function isTextMetrics(value: unknown): value is TextMetrics {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
   return Object.keys(record).length === 2 && typeof record.characters === 'number' && typeof record.words === 'number'
+}
+
+function isEmptyTextMetrics(value: unknown): value is TextMetrics {
+  return isTextMetrics(value) && value.words === 0 && value.characters === 0
 }
 
 function isIdentifierKey(key: string): key is 'id' | 'parentId' | 'conversationId' {

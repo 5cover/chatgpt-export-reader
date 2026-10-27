@@ -61,7 +61,6 @@ export {
   type RecapMessage,
   type RecapOmission,
   type RecapOptions,
-  type RecapPromptStyle,
 } from "./recap.js";
 export {
   collectUsageStatistics,

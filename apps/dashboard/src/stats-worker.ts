@@ -17,7 +17,6 @@ import {
   type RepeatedPhraseAnalysis,
   type RecapContextFormat,
   type RecapContextStrategy,
-  type RecapPromptStyle,
   type TemporalConversation,
   type TemporalMessageEvidence,
   type TemporalMessageFilter,
@@ -93,7 +92,6 @@ type RecapRequest = {
   sessionGapMinutes: number
   contextStrategy: RecapContextStrategy
   contextMessages: number
-  promptStyle: RecapPromptStyle
   contextFormat: RecapContextFormat
 }
 type Request =
@@ -405,7 +403,6 @@ async function generateRecap(request: RecapRequest): Promise<void> {
     endDate: request.endDate,
     sessionGapMinutes: request.sessionGapMinutes,
     context: { strategy: request.contextStrategy, maxMessages: request.contextMessages },
-    promptStyle: request.promptStyle,
   })
   const content = request.contextFormat === 'yaml' ? serializeRecapYaml(document) : serializeRecapToon(document)
   worker.postMessage({
@@ -413,7 +410,7 @@ async function generateRecap(request: RecapRequest): Promise<void> {
     requestId: request.requestId,
     context: new Blob([content], { type: request.contextFormat === 'yaml' ? 'text/yaml' : 'text/plain' }),
     contextFormat: request.contextFormat,
-    prompt: createRecapPrompt(request.promptStyle, request.contextFormat),
+    prompt: createRecapPrompt(request.contextFormat),
   } satisfies Recap)
 }
 

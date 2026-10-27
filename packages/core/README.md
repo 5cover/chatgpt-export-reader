@@ -83,7 +83,7 @@ const recap = buildRecap(chats, {
 });
 
 const contextYaml = serializeRecapYaml(recap);
-const prompt = createRecapPrompt("reflective");
+const prompt = createRecapPrompt();
 ```
 
 Use `context.strategy: "full"` when every earlier timestamped message in each included conversation is needed. The default `rolling-window` mode preserves the beginning and the messages immediately before the range, with explicit omission markers. Untimestamped messages are not placed in recap evidence and are counted in each conversation's metadata.
@@ -92,7 +92,7 @@ Use `context.strategy: "full"` when every earlier timestamped message in each in
 
 Repeated phrases remain unchanged in the general analytics API. Recap documents filter each role's ranked, capped phrase list at `repeatedPhrases.minimumScorePercentile`, which defaults to 90 and retains all ties at the interpolated score threshold. The chosen percentile is recorded in recap selection metadata.
 
-Use `serializeRecapToon(recap)` for the same compact evidence document in TOON. Pass `"toon"` as the second argument to `createRecapPrompt` when the generated prompt should identify TOON as its evidence format.
+Use `serializeRecapToon(recap)` for the same compact evidence document in TOON. Pass `"toon"` to `createRecapPrompt` when the generated prompt should identify TOON as its evidence format.
 
 ## License
 

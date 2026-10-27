@@ -4,7 +4,6 @@ import { Command } from "@commander-js/extra-typings";
 import type {
   RecapContextFormat,
   RecapContextStrategy,
-  RecapPromptStyle,
 } from "@chatgpt-export-reader/core";
 import { createWriteStream } from "fs";
 import { stat } from "fs/promises";
@@ -52,7 +51,6 @@ type RecapCommandOptions = CommonOptions & {
   sessionGapMinutes?: string;
   contextStrategy: string;
   contextMessages: string;
-  recapStyle: string;
   contextFormat: string;
   repeatedPhrasePercentile: string;
 };
@@ -122,7 +120,6 @@ configureCommonOptions(
   .option("--session-gap-minutes <number>", "Minutes separating observed recap sessions")
   .option("--context-strategy <full|rolling-window>", "Pre-window context strategy", "rolling-window")
   .option("--context-messages <number>", "Maximum preceding messages per conversation", "20")
-  .option("--recap-style <name>", "Prompt style: narrative, reflective, or playful", "narrative")
   .option("--context-format <yaml|toon>", "Recap context serialization", "yaml")
   .option(
     "--repeated-phrase-percentile <0-100>",
@@ -153,7 +150,6 @@ configureCommonOptions(
               recapOptions.repeatedPhrasePercentile,
             ),
           },
-          promptStyle: recapStyle(recapOptions.recapStyle),
         },
         recapContextFormat(recapOptions.contextFormat),
       ),
@@ -271,12 +267,6 @@ function numberOption(value: string | undefined, option: string): number | undef
 function recapStrategy(value: string): RecapContextStrategy {
   if (value === "full" || value === "rolling-window") return value;
   throw new Error(`unknown context strategy: ${value}`);
-}
-
-function recapStyle(value: string): RecapPromptStyle {
-  if (value === "narrative" || value === "reflective" || value === "playful")
-    return value;
-  throw new Error(`unknown recap style: ${value}`);
 }
 
 function recapContextFormat(value: string): RecapContextFormat {

@@ -11,7 +11,6 @@ import type {
   RepeatedPhraseAnalysis,
   RecapContextFormat,
   RecapContextStrategy,
-  RecapPromptStyle,
   SessionAnalytics,
   TemporalConversation,
   TemporalMessageEvidence,
@@ -71,7 +70,6 @@ type RecapSettings = {
   sessionGapMinutes: number
   contextStrategy: RecapContextStrategy
   contextMessages: number
-  promptStyle: RecapPromptStyle
   contextFormat: RecapContextFormat
 }
 type RecapState =
@@ -119,7 +117,6 @@ export function App() {
     sessionGapMinutes: 60,
     contextStrategy: 'rolling-window',
     contextMessages: 20,
-    promptStyle: 'narrative',
     contextFormat: 'yaml',
   })
   const [recap, setRecap] = useState<RecapState>({ kind: 'idle' })
@@ -797,16 +794,6 @@ function RecapView({
             value={settings.contextMessages}
             onInput={event => onChange({ contextMessages: Number(event.currentTarget.value) })}
           />
-        </label>
-        <label>
-          Prompt style
-          <select
-            value={settings.promptStyle}
-            onChange={event => onChange({ promptStyle: event.currentTarget.value as RecapPromptStyle })}>
-            <option value="narrative">Narrative</option>
-            <option value="reflective">Reflective</option>
-            <option value="playful">Playful</option>
-          </select>
         </label>
         <label>
           Context format

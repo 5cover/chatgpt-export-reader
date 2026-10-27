@@ -28,7 +28,7 @@ export default class RecapOutput implements OutputFormat {
     root.set(contextName, context);
     root.set(
       "recap-prompt.md",
-      createRecapPrompt(this.options.promptStyle, this.contextFormat),
+      createRecapPrompt(this.contextFormat),
     );
     return root;
   }
