@@ -11,6 +11,7 @@ import type {
   RepeatedPhraseAnalysis,
   RecapContextFormat,
   RecapContextStrategy,
+  RecapPromptModule,
   SessionAnalytics,
   TemporalConversation,
   TemporalMessageEvidence,
@@ -19,11 +20,13 @@ import type {
   TurnPage,
   TextMetrics,
 } from '@chatgpt-export-reader/core'
-import { deriveAnalyticsMetrics } from '@chatgpt-export-reader/core'
+import { createRecapPrompt, deriveAnalyticsMetrics, recapPromptModules } from '@chatgpt-export-reader/core'
 import { DailyChart, type DailyMetric, metricLabel, metricValue } from './daily-chart.js'
 import { HeatmapTable, type HeatmapRow } from './heatmap-table.js'
 import { PromptHistogram } from './prompt-histogram.js'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
+import { TimingChart } from './timing-chart.js'
+import { Projects } from './projects.js'
 
 type ImportState =
   | { kind: 'idle' }
@@ -44,6 +47,7 @@ type Route =
   | { page: 'overview' }
   | { page: 'patterns' }
   | { page: 'recap' }
+  | { page: 'projects' }
   | { page: 'time'; filter: TemporalMessageFilter }
   | { page: 'conversations' }
   | { page: 'conversation'; id: string }
@@ -71,6 +75,7 @@ type RecapSettings = {
   contextStrategy: RecapContextStrategy
   contextMessages: number
   contextFormat: RecapContextFormat
+  modules: RecapPromptModule[]
 }
 type RecapState =
   | { kind: 'idle' }
@@ -118,6 +123,7 @@ export function App() {
     contextStrategy: 'rolling-window',
     contextMessages: 20,
     contextFormat: 'yaml',
+    modules: ['investigator', 'themes', 'behavior', 'friction', 'prompting'],
   })
   const [recap, setRecap] = useState<RecapState>({ kind: 'idle' })
 
@@ -565,6 +571,7 @@ export function App() {
             />
           )}
           {visibleRoute.page === 'patterns' && <Patterns stats={stats} timeZone={selectedTimeZone(zone)} />}
+          {visibleRoute.page === 'projects' && <Projects timing={stats.timing} />}
           {visibleRoute.page === 'recap' && (
             <RecapView
               settings={recapSettings}
@@ -637,6 +644,7 @@ function Nav({ route, hasExport }: { route: Route; hasExport: boolean }) {
           <a class={route.page === 'recap' ? 'active' : ''} href="#/recap">
             Recap
           </a>
+          <a class={route.page === 'projects' ? 'active' : ''} href="#/projects">Projects</a>
           <a
             class={route.page === 'conversations' || route.page === 'conversation' ? 'active' : ''}
             href="#/conversations">
@@ -724,6 +732,7 @@ function RecapView({
   onChange: (change: Partial<RecapSettings>) => void
   onGenerate: () => void
 }) {
+  const prompt = createRecapPrompt(settings.contextFormat, settings.modules)
   return (
     <>
       <section class="recap-heading">
@@ -811,6 +820,9 @@ function RecapView({
           <small>Dates are inclusive. Leave either date empty to use the available range.</small>
         </div>
       </form>
+      <section class="recap-prompt-card"><h2>Prompt modules</h2><p class="chart-note">The evidence and processing core is always included. Modules follow a fixed order.</p>
+        {recapPromptModules.map(module => <label key={module}><input type="checkbox" checked={settings.modules.includes(module)} onChange={event => onChange({ modules: event.currentTarget.checked ? [...settings.modules, module] : settings.modules.filter(value => value !== module) })} /> {module === 'room' ? 'Room portrait' : module[0]!.toUpperCase() + module.slice(1)}</label>)}
+      </section>
       {state.kind === 'error' && <Status title="Recap unavailable" detail={state.message} error />}
       {state.kind === 'ready' && (
         <section class="recap-results">
@@ -827,9 +839,9 @@ function RecapView({
                 <p class="eyebrow">Example prompt</p>
                 <h2>Use this with the downloaded context.</h2>
               </div>
-              <CopyRecapPrompt prompt={state.prompt} />
+              <CopyRecapPrompt prompt={prompt} />
             </div>
-            <pre class="recap-prompt">{state.prompt}</pre>
+            <pre class="recap-prompt">{prompt}</pre>
           </section>
         </section>
       )}
@@ -900,6 +912,9 @@ function Overview({
       <section class="summary-grid analytics-metrics">
         <Metric label="Chats" value={stats.summary.chats} />
         <Metric label="Sessions" value={stats.summary.sessions} />
+        <Metric label="Estimated use" value={formatDuration(stats.timing.summary.usageMs)} />
+        <Metric label="Reply latency" value={formatDuration(stats.timing.summary.thinkingMs)} />
+        <Metric label="Long waits" value={stats.timing.summary.longWaits} />
         <Metric label="Prompts" value={stats.summary.prompts} />
         <Metric label="Input words" value={stats.summary.input.words} />
         <Metric label="Output words" value={stats.summary.output.words} />
@@ -907,6 +922,10 @@ function Overview({
         <Metric label="Output characters" value={stats.summary.output.characters} />
         <Metric label="Output / input" value={formatRatio(metrics.outputToInputWordRatio)} />
       </section>
+      <Accordion title="Time spent" description="Estimated reading and typing, with daily evolution." defaultOpen>
+        <TimingChart timing={stats.timing} />
+        <p class="chart-note">Reply latency counts one first branch reply per prompt up to 30 minutes. Longer waits total {formatDuration(stats.timing.summary.longWaitMs)} and are excluded.</p>
+      </Accordion>
       <Accordion title="Activity over time" description="Compare daily message and text volume." defaultOpen>
         <section class="metric-picker">
           <span>Daily measure</span>
@@ -1856,6 +1875,8 @@ function readRoute(): Route {
         ? { page: 'about' }
         : page === 'recap'
           ? { page: 'recap' }
+          : page === 'projects'
+            ? { page: 'projects' }
           : { page: 'overview' }
 }
 function temporalRoute(filter: TemporalMessageFilter): string {
