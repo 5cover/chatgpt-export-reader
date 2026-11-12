@@ -16,16 +16,18 @@ Keep sample exports and generated output outside `src/` (for example `exports/` 
 ## Build, Test, and Development Commands
 
 - `pnpm build` — compile TypeScript from `src/` to `dist/`.
-- `pnpm lint src` — run ESLint on the source tree.
+- `pnpm lint` - run strict ESLint checks across all workspace code, tests, and tooling, including dashboard CSS and HTML.
+- `pnpm lint:fix` - apply automatic ESLint fixes across the workspace.
+- `pnpm test:lint` - verify lint rule enforcement and ignored paths.
 - `node dist/cli.js` — run the built CLI after a successful build.
 
-There is currently no real test script; `pnpm test` intentionally fails. Until a test suite exists, use `pnpm build` and `pnpm lint src` as the minimum validation before submitting changes.
+Use `pnpm build:all` before `pnpm lint` so workspace package declarations are available for type-aware linting. Run `pnpm test:lint`, `pnpm --filter @chatgpt-export-reader/core test`, and `pnpm --filter chatgpt-export-reader test` as the minimum validation before submitting changes.
 
 ## Coding Style & Naming Conventions
 
 Use TypeScript with strict compiler settings. Follow the existing style in the repo:
 
-- 4-space indentation.
+- Use the global Prettier configuration in the root `package.json` for formatting, including 2-space indentation.
 - ES modules with explicit `.js` import specifiers in source files.
 - Prefer `type` over `interface` where possible; ESLint enforces this.
 - Use descriptive lower-case filenames with hyphens for utilities (for example `fast-markdown.ts`).
@@ -44,7 +46,7 @@ Do not hand-format around lint rules; run ESLint and keep changes minimal.
 
 ## Testing Guidelines
 
-There is no committed test suite yet. When adding coverage, prefer focused tests close to the affected module, using names like `linearizer.test.ts` or `markdown.test.ts`. Verify edge cases around branching conversations, empty content, and export schema variations.
+Core and CLI regression tests live in their package's `test/` directories; lint configuration tests live in the root `test/` directory. When adding coverage, prefer focused tests close to the affected module. Verify edge cases around branching conversations, empty content, and export schema variations.
 
 ## Commit & Pull Request Guidelines
 

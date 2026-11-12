@@ -2,6 +2,24 @@
 
 Turns ChatGPT data exports into Markdown documents for easy browsing.
 
+## Development checks
+
+```sh
+pnpm build:all
+pnpm lint
+pnpm test:lint
+pnpm --filter @chatgpt-export-reader/core test
+pnpm --filter chatgpt-export-reader test
+```
+
+`pnpm lint` checks the entire workspace with zero warnings allowed: TypeScript and TSX source, JavaScript tests, tooling configuration, CSS, and HTML. Build first so workspace package declarations are available for type-aware linting. Each package also exposes `pnpm lint` for its own files; `pnpm lint:fix` at the root applies safe automatic fixes.
+
+The shared root ESLint configuration combines JavaScript recommended rules with typescript-eslint's strict and stylistic type-checked presets, Preact-compatible hook lifecycle checks, strict JSX accessibility rules, and CSS/HTML language plugins. Browser, worker, and Node globals are scoped separately. React Compiler rules are intentionally excluded because the dashboard uses Preact. Prettier owns formatting. Existing indexed algorithms retain non-null assertions, and empty strings may intentionally select UI defaults. Generated output, dependencies, and private export data follow `.gitignore`.
+
+Prettier settings live in the root `package.json` and apply to every workspace package, including the dashboard. Run `pnpm exec prettier --write <files>` to format selected files with the shared configuration.
+
+ESLint 9 is selected to satisfy the JSX accessibility plugin's peer range; TypeScript 6 satisfies typescript-eslint's supported range. `pnpm test:lint` exercises rule enforcement and ignore behavior using ESLint's public API. Deployment runs the workspace build, lint, and lint configuration tests before uploading the dashboard.
+
 ## Usage statistics
 
 Generate a self-contained usage-report directory from a ChatGPT export:

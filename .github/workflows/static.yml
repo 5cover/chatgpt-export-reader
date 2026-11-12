@@ -25,7 +25,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:dashboard
+      - run: pnpm build:all
+      - run: pnpm lint
+      - run: pnpm test:lint
       - uses: actions/upload-pages-artifact@v4
         with:
           path: apps/dashboard/dist

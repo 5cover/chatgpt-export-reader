@@ -40,9 +40,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "pnpm build && node --test test/*.test.mjs",
-    "check": "pnpm test",
+    "check": "pnpm lint && pnpm test",
     "prepack": "pnpm build",
-    "prepublishOnly": "pnpm test"
+    "prepublishOnly": "pnpm test",
+    "lint": "eslint . --max-warnings 0"
   },
   "publishConfig": {
     "access": "public"
