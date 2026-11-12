@@ -1,4 +1,5 @@
 export type { Chat, Message, Thought } from "./types.js";
+export { collectTiming, type TimingStatistics, type TimingBreakdown, type TimingTotals } from './timing.js';
 export {
   extractV1UsageConversation,
   isEmptyV1Record,

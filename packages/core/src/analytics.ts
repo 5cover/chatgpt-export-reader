@@ -1,4 +1,5 @@
 import type { Chat, Message } from "./types.js";
+import { collectTiming, type TimingStatistics } from './timing.js';
 
 export type TextMetrics = {
   characters: number;
@@ -131,6 +132,7 @@ export type AnalyticsStatistics = {
   hours: TemporalCell[];
   conversations: ConversationAnalytics[];
   sessions: SessionAnalytics[];
+  timing: TimingStatistics;
 };
 
 export type TurnBin = {
@@ -228,8 +230,9 @@ export function collectAnalytics(
   options: AnalyticsOptions = {},
 ): AnalyticsStatistics {
   const context = createContext(options);
-  const events = collectEvents(chats, context);
-  return aggregate(events, context);
+  const source = [...chats];
+  const events = collectEvents(source, context);
+  return { ...aggregate(events, context), timing: collectTiming(source, options) };
 }
 
 export function collectTemporalMessageSlice(
@@ -494,6 +497,7 @@ function aggregate(events: Event[], context: Context): AnalyticsStatistics {
           a.title.localeCompare(b.title),
       ),
     sessions,
+    timing: { summary: { usageMs: 0, thinkingMs: 0, longWaitMs: 0, longWaits: 0, unmatchedPrompts: 0 }, days: [], projects: [], conversations: [] },
   };
 }
 
