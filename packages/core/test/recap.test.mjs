@@ -49,6 +49,15 @@ const chat = (id, messages) => ({
   isArchived: false,
 });
 
+test('recap includes friendly project names in evidence and breakdowns', () => {
+  const source = [{ ...chat('one', [message('u', 'user', 'hello', at(1, 9))]), projectName: 'project-id' }];
+  const recap = buildRecap(source, { projectNames: { 'project-id': 'Research' } });
+  assert.equal(recap.analytics.projects[0].name, 'Research');
+  assert.equal(recap.conversations[0].projectName, 'Research');
+  assert.equal(recap.analytics.timing.projects[0].title, 'Research');
+  assert.match(serializeRecapYaml(recap), /projectName: Research/);
+});
+
 test("recap uses inclusive local date boundaries and resolves a missing end date", () => {
   const source = [
     chat("one", [

@@ -133,6 +133,20 @@ export type AnalyticsStatistics = {
   conversations: ConversationAnalytics[];
   sessions: SessionAnalytics[];
   timing: TimingStatistics;
+  projects: ProjectAnalytics[];
+};
+
+export type ProjectAnalytics = {
+  id: string;
+  name?: string;
+  chats: number;
+  messages: number;
+  prompts: number;
+  input: TextMetrics;
+  output: TextMetrics;
+  other: TextMetrics;
+  activeDays: number;
+  days: Array<{ date: string; messages: number; prompts: number; input: TextMetrics; output: TextMetrics; other: TextMetrics }>;
 };
 
 export type TurnBin = {
@@ -191,6 +205,7 @@ type Event = {
   id: string;
   order: number;
   chatId: string;
+  projectId: string;
   title: string;
   role: string;
   body: string;
@@ -232,7 +247,7 @@ export function collectAnalytics(
   const context = createContext(options);
   const source = [...chats];
   const events = collectEvents(source, context);
-  return { ...aggregate(events, context), timing: collectTiming(source, options) };
+  return { ...aggregate(events, context), timing: collectTiming(source, options), projects: collectProjects(events, context) };
 }
 
 export function collectTemporalMessageSlice(
@@ -390,7 +405,7 @@ export function collectRepeatedPhrases(
   };
 }
 
-function aggregate(events: Event[], context: Context): Omit<AnalyticsStatistics, 'timing'> {
+function aggregate(events: Event[], context: Context): Omit<AnalyticsStatistics, 'timing' | 'projects'> {
   const summary: AnalyticsSummary = {
     chats: 0,
     messages: 0,
@@ -511,6 +526,7 @@ function collectEvents(chats: Iterable<Chat>, context: Context): Event[] {
         id: `${chat.id}:${message.id}:${sequence++}`,
         order: sequence,
         chatId: chat.id,
+        projectId: chat.projectName ?? '',
         title: chat.title,
         role: message.role,
         body: message.body,
@@ -525,6 +541,48 @@ function collectEvents(chats: Iterable<Chat>, context: Context): Event[] {
     }
   }
   return events;
+}
+
+function collectProjects(events: readonly Event[], context: Context): ProjectAnalytics[] {
+  const projects = new Map<string, ProjectAnalytics & { dates: Set<string> }>();
+  const chatIds = new Map<string, Set<string>>();
+  const projectDays = new Map<string, ProjectAnalytics['days'][number]>();
+  const get = (id: string) => {
+    let project = projects.get(id);
+    if (!project) {
+      project = { id, chats: 0, messages: 0, prompts: 0, input: emptyText(), output: emptyText(), other: emptyText(), activeDays: 0, days: [], dates: new Set() };
+      projects.set(id, project);
+    }
+    return project;
+  };
+  for (const event of events) {
+    const project = get(event.projectId);
+    const ids = chatIds.get(event.projectId) ?? new Set<string>();
+    ids.add(event.chatId);
+    chatIds.set(event.projectId, ids);
+    project.messages++;
+    if (event.role === 'user') project.prompts++;
+    addText(project.input, event.input);
+    addText(project.output, event.output);
+    addText(project.other, event.other);
+    if (event.createTime === undefined) continue;
+    const date = context.dayKey(event.createTime);
+    project.dates.add(date);
+    const key = `${event.projectId}\u0000${date}`;
+    let day = projectDays.get(key);
+    if (!day) {
+      day = { date, messages: 0, prompts: 0, input: emptyText(), output: emptyText(), other: emptyText() };
+      project.days.push(day);
+      projectDays.set(key, day);
+    }
+    day.messages++;
+    if (event.role === 'user') day.prompts++;
+    addText(day.input, event.input);
+    addText(day.output, event.output);
+    addText(day.other, event.other);
+  }
+  return [...projects.values()].map(({ dates, ...project }) => ({ ...project, chats: chatIds.get(project.id)?.size ?? 0, activeDays: dates.size, days: project.days.sort((a, b) => a.date.localeCompare(b.date)) }))
+    .sort((a, b) => b.messages - a.messages || a.id.localeCompare(b.id));
 }
 
 type SuffixState = {

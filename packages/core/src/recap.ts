@@ -123,6 +123,11 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
     sessionGapMinutes: options.sessionGapMinutes,
   }
   const analytics = collectAnalytics(source, analyticsOptions)
+  if (options.projectNames) {
+    analytics.projects = analytics.projects.map(project => ({ ...project, name: options.projectNames?.[project.id] ?? (project.id || 'Unassigned') }))
+    analytics.timing.projects = analytics.timing.projects.map(project => ({ ...project, title: options.projectNames?.[project.id] ?? project.title }))
+    analytics.timing.projectDays = analytics.timing.projectDays.map(day => ({ ...day, title: options.projectNames?.[day.projectId] ?? day.title }))
+  }
   if (analytics.summary.messages === 0)
     throw new RangeError(`no timestamped messages fall between ${resolvedStart} and ${resolvedEnd} in ${timeZone}.`)
   const repeatedPhrases = filterRepeatedPhrases(

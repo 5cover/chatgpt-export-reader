@@ -32,3 +32,23 @@ test('long reply delay is excluded from headline', () => {
   assert.equal(result.summary.longWaitMs, 3_600_000)
   assert.equal(result.summary.longWaits, 1)
 })
+
+test('usage intervals split at local midnight and honor the date filter', () => {
+  const start = Date.parse('2026-01-02T00:00:01Z')
+  const result = collectTiming([chat([message('u', 'user', start)])], { timeZone: 'UTC', startDate: '2026-01-02' })
+  assert.deepEqual(result.days.map(day => day.id), ['2026-01-02'])
+  assert.equal(result.summary.usageMs, 1000)
+  assert.equal(result.projects[0].usageMs, 1000)
+})
+
+test('deep conversation trees do not overflow timing traversal', () => {
+  const start = Date.parse('2026-01-01T12:00:00Z')
+  const root = message('0', 'assistant', start)
+  let current = root
+  for (let index = 1; index < 3000; index++) {
+    const child = message(String(index), 'assistant', start + index * 1000)
+    current.children = [child]
+    current = child
+  }
+  assert.equal(collectTiming([chat([root])]).summary.unmatchedPrompts, 0)
+})

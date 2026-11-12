@@ -15,6 +15,7 @@ export {
   type AnalyticsDay,
   type AnalyticsOptions,
   type AnalyticsStatistics,
+  type ProjectAnalytics,
   type AnalyticsSummary,
   type ConversationAnalytics,
   type ConversationDetail,

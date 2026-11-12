@@ -35,8 +35,11 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
   for (const chat of chats) {
     const project = chat.projectName ?? ''
     const ownSpans = new Map<Message, Span>()
-    const visit = (message: Message, seen: Set<Message>) => {
-      if (seen.has(message)) return
+    const seen = new Set<Message>()
+    const stack = [...chat.messages].reverse()
+    while (stack.length) {
+      const message = stack.pop()!
+      if (seen.has(message)) continue
       seen.add(message)
       const at = message.createTime
       if (valid(at) && include(at) && (message.role === 'user' || message.role === 'assistant')) {
@@ -72,10 +75,8 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
           })
         }
       }
-      message.children.forEach(child => visit(child, seen))
+      for (let index = message.children.length - 1; index >= 0; index--) stack.push(message.children[index]!)
     }
-    const seen = new Set<Message>()
-    chat.messages.forEach(root => visit(root, seen))
     // A reply-to-next-prompt gap is evidence of possible reading and typing.
     // Allow at most twice the text-based budget, leaving any remaining gap idle.
     for (const [assistant, reading] of ownSpans) {
@@ -110,15 +111,17 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
         end = low
       }
       const duration = end - start
-      get(days, date).usageMs += duration
-      get(projects, span.project, span.project || 'Unassigned').usageMs += duration
-      const pdKey = `${span.project}\u0000${date}`
-      let pd = projectDays.get(pdKey)
-      if (!pd) { pd = { id: pdKey, title: span.project || 'Unassigned', projectId: span.project, date, ...empty() }; projectDays.set(pdKey, pd) }
-      pd.usageMs += duration
-      const conversation = get(conversations, span.chat)
-      conversation.projectId = span.project
-      conversation.usageMs += duration
+      if (include(start)) {
+        get(days, date).usageMs += duration
+        get(projects, span.project, span.project || 'Unassigned').usageMs += duration
+        const pdKey = `${span.project}\u0000${date}`
+        let pd = projectDays.get(pdKey)
+        if (!pd) { pd = { id: pdKey, title: span.project || 'Unassigned', projectId: span.project, date, ...empty() }; projectDays.set(pdKey, pd) }
+        pd.usageMs += duration
+        const conversation = get(conversations, span.chat)
+        conversation.projectId = span.project
+        conversation.usageMs += duration
+      }
       start = end
     }
   }
