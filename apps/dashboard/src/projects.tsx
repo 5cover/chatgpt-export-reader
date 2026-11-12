@@ -1,8 +1,16 @@
 import { useState } from 'preact/hooks'
-import type { TimingStatistics } from '@chatgpt-export-reader/core'
+import type { AnalyticsStatistics } from '@chatgpt-export-reader/core'
+import { TimingChart } from './timing-chart.js'
 
 const storageKey = 'chatgpt-export-reader/project-names/v1'
 type Names = Record<string, string>
+function ProjectName({ id, name, onSave }: { id: string; name?: string; onSave: (name: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(name ?? '')
+  const finish = (save: boolean) => { if (save) onSave(draft.trim()); setEditing(false) }
+  if (!editing) return <><button type="button" aria-label={`Rename project ${name || id}`} onClick={() => { setDraft(name ?? ''); setEditing(true) }}>{name || id}</button><small>{name ? id : 'Click to rename'}</small></>
+  return <input autoFocus aria-label={`Name for project ${id}`} value={draft} onInput={event => setDraft(event.currentTarget.value)} onBlur={() => finish(true)} onKeyDown={event => { if (event.key === 'Enter') finish(true); if (event.key === 'Escape') finish(false) }} />
+}
 export function readProjectNames(): Names {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '{}')
@@ -18,10 +26,12 @@ function validNames(value: unknown): Names {
   }
   return result
 }
-export function Projects({ timing }: { timing: TimingStatistics }) {
+export function Projects({ stats }: { stats: AnalyticsStatistics }) {
+  const timing = stats.timing
   const [names, setNames] = useState(readProjectNames)
   const [error, setError] = useState<string>()
   const [selectedId, setSelectedId] = useState<string>()
+  const [onlyUnnamed, setOnlyUnnamed] = useState(false)
   const save = (next: Names) => { localStorage.setItem(storageKey, JSON.stringify(next)); setNames(next) }
   const exportNames = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify({ schema: storageKey, names }, null, 2)], { type: 'application/json' }))
@@ -42,15 +52,21 @@ export function Projects({ timing }: { timing: TimingStatistics }) {
     <h2>Projects</h2>
     <p class="chart-note">Rename project IDs inline. Names stay in this browser; export a mapping to use them elsewhere. Unassigned chats cannot be renamed.</p>
     <div class="recap-actions"><button type="button" onClick={exportNames}>Export names</button><label>Import names <input type="file" accept="application/json,.json" onChange={event => void importNames(event.currentTarget.files?.[0])} /></label></div>
+    <label><input type="checkbox" checked={onlyUnnamed} onChange={event => setOnlyUnnamed(event.currentTarget.checked)} /> Show only unnamed projects ({stats.projects.filter(project => project.id && !names[project.id]).length})</label>
     {error && <p role="alert">{error}</p>}
-    <table><thead><tr><th>Project</th><th>Chats</th><th>Estimated use</th><th>Reply latency</th><th>Long waits</th></tr></thead><tbody>
-      {timing.projects.map(project => <tr key={project.id}><td>
-        {project.id ? <><input aria-label={`Name for project ${project.id}`} value={names[project.id] ?? ''} placeholder={project.id} onInput={event => save({ ...names, [project.id]: event.currentTarget.value })} /><small>{project.id}</small></> : 'Unassigned'}
-      </td><td>{timing.conversations.filter(chat => chat.projectId === project.id).length}</td><td><button type="button" onClick={() => setSelectedId(project.id)}>{Math.round(project.usageMs / 60_000)} min</button></td><td>{Math.round(project.thinkingMs / 60_000)} min</td><td>{project.longWaits}</td></tr>)}
-    </tbody></table>
+    <div class="table-wrap"><table><thead><tr><th>Project</th><th>Chats</th><th>Prompts</th><th>Messages</th><th>Input words</th><th>Output words</th><th>Estimated use</th><th>Reply latency</th><th>Long waits</th></tr></thead><tbody>
+      {stats.projects.filter(project => !onlyUnnamed || (project.id && !names[project.id])).map(project => { const time = timing.projects.find(value => value.id === project.id); return <tr key={project.id}><td>
+        {project.id ? <ProjectName id={project.id} name={names[project.id]} onSave={name => { const next = { ...names }; if (name) next[project.id] = name; else delete next[project.id]; save(next) }} /> : 'Unassigned'}
+      </td><td>{project.chats}</td><td>{project.prompts}</td><td>{project.messages}</td><td>{project.input.words}</td><td>{project.output.words}</td><td><button type="button" onClick={() => setSelectedId(project.id)}>{Math.round((time?.usageMs ?? 0) / 60_000)} min</button></td><td>{Math.round((time?.thinkingMs ?? 0) / 60_000)} min</td><td>{time?.longWaits ?? 0}</td></tr> })}
+    </tbody></table></div>
     {selectedId !== undefined && <section><h3>{names[selectedId] || selectedId || 'Unassigned'} by day</h3>
+      <TimingChart timing={{ ...timing, days: timing.projectDays.filter(day => day.projectId === selectedId).map(day => ({ ...day, id: day.date })) }} calendarDays={stats.days.map(day => day.date)} />
       <table><thead><tr><th>Day</th><th>Estimated use</th><th>Reply latency</th></tr></thead><tbody>
         {timing.projectDays.filter(day => day.projectId === selectedId).sort((a, b) => a.date.localeCompare(b.date)).map(day => <tr key={day.id}><td>{day.date}</td><td>{Math.round(day.usageMs / 60_000)} min</td><td>{Math.round(day.thinkingMs / 60_000)} min</td></tr>)}
+      </tbody></table>
+      <h3>Activity</h3><p>{stats.projects.find(project => project.id === selectedId)?.activeDays ?? 0} active days</p>
+      <table><thead><tr><th>Day</th><th>Prompts</th><th>Messages</th><th>Input words</th><th>Output words</th></tr></thead><tbody>
+        {stats.projects.find(project => project.id === selectedId)?.days.map(day => <tr key={day.date}><td>{day.date}</td><td>{day.prompts}</td><td>{day.messages}</td><td>{day.input.words}</td><td>{day.output.words}</td></tr>)}
       </tbody></table>
       <h3>Conversations</h3><ul>{timing.conversations.filter(chat => chat.projectId === selectedId).sort((a, b) => b.usageMs - a.usageMs).map(chat => <li key={chat.id}><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title}</a> - {Math.round(chat.usageMs / 60_000)} min</li>)}</ul>
     </section>}

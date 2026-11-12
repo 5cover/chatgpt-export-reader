@@ -571,7 +571,7 @@ export function App() {
             />
           )}
           {visibleRoute.page === 'patterns' && <Patterns stats={stats} timeZone={selectedTimeZone(zone)} />}
-          {visibleRoute.page === 'projects' && <Projects timing={stats.timing} />}
+          {visibleRoute.page === 'projects' && <Projects stats={stats} />}
           {visibleRoute.page === 'recap' && (
             <RecapView
               settings={recapSettings}
@@ -823,6 +823,10 @@ function RecapView({
       <section class="recap-prompt-card"><h2>Prompt modules</h2><p class="chart-note">The evidence and processing core is always included. Modules follow a fixed order.</p>
         {recapPromptModules.map(module => <label key={module}><input type="checkbox" checked={settings.modules.includes(module)} onChange={event => onChange({ modules: event.currentTarget.checked ? [...settings.modules, module] : settings.modules.filter(value => value !== module) })} /> {module === 'room' ? 'Room portrait' : module[0]!.toUpperCase() + module.slice(1)}</label>)}
       </section>
+      <section class="recap-prompt-card">
+        <div class="chart-heading"><div><p class="eyebrow">Prompt preview</p><h2>Use this with the downloaded context.</h2></div><CopyRecapPrompt prompt={prompt} /></div>
+        <pre class="recap-prompt">{prompt}</pre>
+      </section>
       {state.kind === 'error' && <Status title="Recap unavailable" detail={state.message} error />}
       {state.kind === 'ready' && (
         <section class="recap-results">
@@ -833,16 +837,6 @@ function RecapView({
               {state.contextFormat.toUpperCase()} file, {formatByteSize(state.contextSize)}
             </small>
           </a>
-          <section class="recap-prompt-card">
-            <div class="chart-heading">
-              <div>
-                <p class="eyebrow">Example prompt</p>
-                <h2>Use this with the downloaded context.</h2>
-              </div>
-              <CopyRecapPrompt prompt={prompt} />
-            </div>
-            <pre class="recap-prompt">{prompt}</pre>
-          </section>
         </section>
       )}
     </>
@@ -923,7 +917,10 @@ function Overview({
         <Metric label="Output / input" value={formatRatio(metrics.outputToInputWordRatio)} />
       </section>
       <Accordion title="Time spent" description="Estimated reading and typing, with daily evolution." defaultOpen>
-        <TimingChart timing={stats.timing} />
+        <TimingChart timing={stats.timing} calendarDays={stats.days.map(day => day.date)} onSelectDate={onSelectDate} />
+        <p class="chart-note">{stats.timing.days.filter(day => day.usageMs >= 7_200_000).length} days estimated at 2 hours or more. The busiest day was {stats.timing.days.reduce<(typeof stats.timing.days)[number] | undefined>((best, day) => !best || day.usageMs > best.usageMs ? day : best, undefined)?.id ?? 'none'}.</p>
+        {selectedDate && <section><h3>Time on {selectedDate}</h3><p>Estimated use: {formatDuration(stats.timing.days.find(day => day.id === selectedDate)?.usageMs ?? 0)}. Reply latency: {formatDuration(stats.timing.days.find(day => day.id === selectedDate)?.thinkingMs ?? 0)}.</p>
+          <ul>{stats.timing.projectDays.filter(day => day.date === selectedDate).sort((a, b) => b.usageMs - a.usageMs).map(day => <li key={day.id}><a href="#/projects">{readProjectNames()[day.projectId] || day.title}</a>: {formatDuration(day.usageMs)} estimated use</li>)}</ul></section>}
         <p class="chart-note">Reply latency counts one first branch reply per prompt up to 30 minutes. Longer waits total {formatDuration(stats.timing.summary.longWaitMs)} and are excluded.</p>
       </Accordion>
       <Accordion title="Activity over time" description="Compare daily message and text volume." defaultOpen>
