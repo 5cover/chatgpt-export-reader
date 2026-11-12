@@ -1,6 +1,6 @@
 import type { Chat, Message } from './types.js'
 
-export type TimingTotals = { usageMs: number; thinkingMs: number; longWaitMs: number; longWaits: number; unmatchedPrompts: number }
+export type TimingTotals = { usageMs: number; thinkingMs: number; longWaitMs: number; longWaits: number; unmatchedPrompts: number; invalidPrompts: number }
 export type TimingBreakdown = TimingTotals & { id: string; title: string; projectId?: string }
 export type TimingStatistics = {
   summary: TimingTotals
@@ -11,7 +11,7 @@ export type TimingStatistics = {
 }
 
 type Span = { start: number; end: number; project: string; chat: string }
-const empty = (): TimingTotals => ({ usageMs: 0, thinkingMs: 0, longWaitMs: 0, longWaits: 0, unmatchedPrompts: 0 })
+const empty = (): TimingTotals => ({ usageMs: 0, thinkingMs: 0, longWaitMs: 0, longWaits: 0, unmatchedPrompts: 0, invalidPrompts: 0 })
 const valid = (value?: number): value is number => value !== undefined && Number.isFinite(value) && Number.isFinite(new Date(value).getTime())
 const estimate = (message: Message): number => Math.min(900_000, Math.max(3_000, Math.ceil(message.body.trim().split(/\s+/u).filter(Boolean).length / (message.role === 'user' ? 40 : 200) * 60_000)))
 
@@ -26,6 +26,7 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
   const projectDays = new Map<string, TimingBreakdown & { projectId: string; date: string }>()
   const conversations = new Map<string, TimingBreakdown>()
   const spans: Span[] = []
+  let invalidPrompts = 0
   const get = (map: Map<string, TimingBreakdown>, id: string, title = id) => {
     let value = map.get(id)
     if (!value) { value = { id, title, ...empty() }; map.set(id, value) }
@@ -42,6 +43,13 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
       if (seen.has(message)) continue
       seen.add(message)
       const at = message.createTime
+      if (message.role === 'user' && !valid(at)) {
+        invalidPrompts++
+        get(projects, project, project || 'Unassigned').invalidPrompts++
+        const conversation = get(conversations, chat.id, chat.title)
+        conversation.projectId = project
+        conversation.invalidPrompts++
+      }
       if (valid(at) && include(at) && (message.role === 'user' || message.role === 'assistant')) {
         const ms = estimate(message)
         const span = { start: message.role === 'user' ? at - ms : at, end: message.role === 'user' ? at : at + ms, project, chat: chat.id }
@@ -127,5 +135,6 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
   }
   const summary = empty()
   for (const day of days.values()) for (const key of Object.keys(summary) as Array<keyof TimingTotals>) summary[key] += day[key]
+  summary.invalidPrompts = invalidPrompts
   return { summary, days: [...days.values()].sort((a, b) => a.id.localeCompare(b.id)), projects: [...projects.values()].sort((a, b) => b.usageMs - a.usageMs), projectDays: [...projectDays.values()], conversations: [...conversations.values()] }
 }

@@ -909,6 +909,8 @@ function Overview({
         <Metric label="Estimated use" value={formatDuration(stats.timing.summary.usageMs)} />
         <Metric label="Reply latency" value={formatDuration(stats.timing.summary.thinkingMs)} />
         <Metric label="Long waits" value={stats.timing.summary.longWaits} />
+        <Metric label="Unmatched prompts" value={stats.timing.summary.unmatchedPrompts} />
+        <Metric label="Untimed prompts" value={stats.timing.summary.invalidPrompts} />
         <Metric label="Prompts" value={stats.summary.prompts} />
         <Metric label="Input words" value={stats.summary.input.words} />
         <Metric label="Output words" value={stats.summary.output.words} />

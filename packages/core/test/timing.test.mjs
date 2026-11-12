@@ -52,3 +52,10 @@ test('deep conversation trees do not overflow timing traversal', () => {
   }
   assert.equal(collectTiming([chat([root])]).summary.unmatchedPrompts, 0)
 })
+
+test('untimed prompts are reported without fabricating latency', () => {
+  const result = collectTiming([chat([message('u', 'user', undefined)])])
+  assert.equal(result.summary.invalidPrompts, 1)
+  assert.equal(result.projects[0].invalidPrompts, 1)
+  assert.equal(result.summary.thinkingMs, 0)
+})
