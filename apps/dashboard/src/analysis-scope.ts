@@ -26,7 +26,13 @@ export function previousPeriod(current: Period): Period {
   }
 }
 export function scopeKey(scope: AnalysisScope): string {
-  return JSON.stringify(scope)
+  return JSON.stringify([
+    scope.timeZone,
+    scope.startDate ?? null,
+    scope.endDate ?? null,
+    scope.projectId ?? null,
+    scope.sessionGapMinutes,
+  ])
 }
 export function readScope(): AnalysisScope {
   const params = new URLSearchParams(location.search)

@@ -27,7 +27,7 @@ export function CalendarRhythm({
           ))}
         </select>
       </label>
-      <p>Select a day to inspect its conversations below the activity chart.</p>
+      <p>Select a day, then open its conversation evidence in Overview.</p>
       <div class="month-grid">
         {Array.from({ length: 7 }, (_, day) => (
           <span key={day} class="weekday">
@@ -42,14 +42,21 @@ export function CalendarRhythm({
             key={day.date}
             type="button"
             aria-pressed={selectedDate === day.date}
-            aria-label={`${day.date}: ${day.prompts} prompts. Inspect conversations.`}
+            aria-label={`${Number(day.date.slice(8))} ${day.prompts} ${day.prompts === 1 ? 'prompt' : 'prompts'}. ${day.date}. Inspect conversations.`}
             class={day.prompts ? 'calendar-day has-activity' : 'calendar-day'}
             onClick={() => onSelectDate(day.date)}>
-            <span>{Number(day.date.slice(8))}</span>
-            <small>{day.prompts} prompts</small>
+            <span>{Number(day.date.slice(8))}</span>{' '}
+            <small>
+              {day.prompts} {day.prompts === 1 ? 'prompt' : 'prompts'}
+            </small>
           </button>
         ))}
       </div>
+      {selectedDate && (
+        <p>
+          <a href="#/">Inspect conversations on {selectedDate}</a>
+        </p>
+      )}
     </section>
   )
 }

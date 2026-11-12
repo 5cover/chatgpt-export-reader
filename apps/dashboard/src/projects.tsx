@@ -84,6 +84,22 @@ export function Projects({
     },
   ]
   const project = stats.projects.find(project => project.id === id)
+  const projectValues = useMemo(() => {
+    const byDate = new Map(project?.days.map(day => [day.date, day]))
+    return dailyValues(
+      stats.days.map(day => ({
+        ...day,
+        prompts: byDate.get(day.date)?.prompts ?? 0,
+        input: byDate.get(day.date)?.input ?? { words: 0, characters: 0 },
+        output: byDate.get(day.date)?.output ?? { words: 0, characters: 0 },
+      })),
+      {
+        ...stats.timing,
+        days: stats.timing.projectDays.filter(day => day.projectId === id).map(day => ({ ...day, id: day.date })),
+      },
+      measure
+    )
+  }, [stats, project, id, measure])
   const exportNames = () => {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify({ schema: projectNamesKey, names }, null, 2)], { type: 'application/json' })
@@ -117,7 +133,7 @@ export function Projects({
       <section>
         <a href="#/projects">All projects</a>
         <h3>
-          <ProjectNameEditor id={id} />
+          <ProjectNameEditor key={id} id={id} />
         </h3>
         {!project ? (
           <p>No activity for this project in the current scope. Change the project filter or period above.</p>
@@ -135,25 +151,7 @@ export function Projects({
                 label: measures[value].label,
               }))}
             />
-            <DailySeriesChart
-              title="Project activity over time"
-              days={dailyValues(
-                stats.days.map(day => ({
-                  ...day,
-                  prompts: project.days.find(p => p.date === day.date)?.prompts ?? 0,
-                  input: project.days.find(p => p.date === day.date)?.input ?? { words: 0, characters: 0 },
-                  output: project.days.find(p => p.date === day.date)?.output ?? { words: 0, characters: 0 },
-                })),
-                {
-                  ...stats.timing,
-                  days: stats.timing.projectDays
-                    .filter(day => day.projectId === id)
-                    .map(day => ({ ...day, id: day.date })),
-                },
-                measure
-              )}
-              measure={measure}
-            />
+            <DailySeriesChart title="Project activity over time" days={projectValues} measure={measure} />
             <h3>Contributing conversations</h3>
             <ConversationTable
               conversations={stats.conversations.filter(chat => (chat.projectId ?? '') === id)}

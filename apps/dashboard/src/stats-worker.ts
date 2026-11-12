@@ -96,7 +96,8 @@ async function handle(request: WorkerRequest): Promise<void> {
           request.scope,
           request.offset,
           50,
-          request.query
+          request.query,
+          request.queryMode
         ),
       })
       return

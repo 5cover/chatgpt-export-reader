@@ -355,15 +355,29 @@ export function findConversationTurns(
   options: AnalyticsOptions = {},
   offset = 0,
   limit = 50,
-  query?: string
+  query?: string,
+  queryMode: 'literal' | 'word-sequence' = 'literal'
 ): TurnPage {
   const context = createContext(options)
-  const normalizedQuery = query?.trim().toLocaleLowerCase()
+  const words = (text: string) =>
+    [...context.segmenter.segment(text)]
+      .filter(segment => segment.isWordLike)
+      .map(segment => segment.segment.toLocaleLowerCase())
+      .join(' ')
+  const normalizedQuery =
+    query === undefined ? undefined : queryMode === 'word-sequence' ? words(query) : query.trim().toLocaleLowerCase()
   const events = sortEvents(collectEvents(chats, context))
   assignSessions(events, context.sessionGapMs)
   const matching = events
     .map((event, index) => ({ event, index }))
-    .filter(({ event }) => normalizedQuery === undefined || event.body.toLocaleLowerCase().includes(normalizedQuery))
+    .filter(
+      ({ event }) =>
+        normalizedQuery === undefined ||
+        normalizedQuery === '' ||
+        (queryMode === 'word-sequence'
+          ? ` ${words(event.body)} `.includes(` ${normalizedQuery} `)
+          : event.body.toLocaleLowerCase().includes(normalizedQuery))
+    )
   return {
     offset,
     total: matching.length,

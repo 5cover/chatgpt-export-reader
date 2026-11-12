@@ -3,6 +3,7 @@ import type { AnalyticsStatistics, RepeatedPhrase, TurnBin } from '@chatgpt-expo
 import type { AnalysisScope } from './analysis-scope.js'
 import type { WorkerClient } from './worker-client.js'
 import { useWorkerQuery } from './use-worker-query.js'
+import { useDebouncedValue } from './use-debounced-value.js'
 import { CopyButton, Disclosure, Metric, Status } from './ui.js'
 import { ProjectLink } from './project-identity.js'
 import { WorkerMessage } from './worker-message.js'
@@ -21,18 +22,24 @@ export function ConversationView({
   stats: AnalyticsStatistics
 }) {
   const [query, setQuery] = useState('')
+  const [queryMode, setQueryMode] = useState<'literal' | 'word-sequence'>('literal')
   const [offset, setOffset] = useState(0)
+  const settledQuery = useDebouncedValue(query)
   const [outlineOpen, setOutlineOpen] = useState(true)
   const outlineTarget = useRef<HTMLElement>(null)
   const detailRequest = useMemo(() => ({ type: 'conversation-detail' as const, id, scope }), [id, scope])
   const outlineRequest = useMemo(
-    () => ({ type: 'conversation-outline' as const, id, scope, offset, query }),
-    [id, scope, offset, query]
+    () =>
+      query === settledQuery
+        ? { type: 'conversation-outline' as const, id, scope, offset, query, queryMode }
+        : undefined,
+    [id, scope, offset, query, queryMode, settledQuery]
   )
   const detail = useWorkerQuery(client, detailRequest)
   const outline = useWorkerQuery(client, outlineRequest)
   const inspect = (query: string, offset = 0) => {
     setQuery(query)
+    setQueryMode(query ? 'word-sequence' : 'literal')
     setOffset(offset)
     setOutlineOpen(true)
     requestAnimationFrame(() => {
@@ -100,12 +107,19 @@ export function ConversationView({
               type="search"
               value={query}
               onInput={event => {
+                setQueryMode('literal')
                 setQuery(event.currentTarget.value)
                 setOffset(0)
               }}
             />
           </label>
-          {outline.kind === 'loading' ? (
+          {queryMode === 'word-sequence' && (
+            <p>
+              Matching whole word sequences, ignoring punctuation and spacing. Edit the search to return to literal text
+              matching.
+            </p>
+          )}
+          {query !== settledQuery || outline.kind === 'loading' ? (
             <p role="status">Loading messages...</p>
           ) : outline.kind === 'error' ? (
             <Status title="Messages unavailable" detail={outline.message} error />
@@ -215,14 +229,16 @@ function PhraseAnalysis({
   return (
     <Disclosure title="Investigate repeated language" onOpen={() => setEnabled(true)}>
       {!enabled || state.kind === 'loading' ? (
-        <p role="status">Open this section to analyze repeated language.</p>
+        <p role="status">
+          {enabled ? 'Analyzing repeated language...' : 'Open this section to analyze repeated language.'}
+        </p>
       ) : state.kind === 'error' ? (
         <Status title="Repeated language unavailable" detail={state.message} error />
       ) : (
         <>
           <p>
-            Exact repeated word sequences are leads, not evidence of friction by themselves. Inspect their occurrences
-            before interpreting them. Score is words multiplied by occurrences.
+            Up to 500 maximal repeated word sequences per role are shown. These are leads, not evidence of friction by
+            themselves. Inspect their occurrences before interpreting them. Score is words multiplied by occurrences.
           </p>
           <PhraseTable title="Your phrases" rows={state.value.analysis.user} onInspect={onInspect} />
           <PhraseTable title="Assistant phrases" rows={state.value.analysis.assistant} onInspect={onInspect} />

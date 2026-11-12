@@ -21,9 +21,10 @@ export class WorkerClient {
       if (message.type === 'failure') pending.reject(new Error(message.message))
       else pending.resolve(message)
     })
-    this.worker.addEventListener('error', () =>
+    this.worker.addEventListener('error', event => {
+      event.preventDefault()
       this.fail('The analysis worker stopped unexpectedly. Import your export again to restart it.')
-    )
+    })
     this.worker.addEventListener('messageerror', () =>
       this.fail('The analysis worker returned an unreadable response. Import your export again.')
     )

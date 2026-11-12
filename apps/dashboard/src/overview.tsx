@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'preact/hooks'
-import type { AnalyticsDay } from '@chatgpt-export-reader/core'
+import { deriveOutputConcentration, type AnalyticsDay } from '@chatgpt-export-reader/core'
 import type { StatisticsResult } from './worker-protocol.js'
 import { Choice, Disclosure, Metric, TextValue } from './ui.js'
 import { DailySeriesChart } from './daily-series-chart.js'
 import { dailyValues, measures, type Measure } from './metric-definitions.js'
-import { formatDuration, formatShare } from './format.js'
+import { formatDuration, formatShare, formatRatio } from './format.js'
 import { ProjectLink } from './project-identity.js'
 import { SortableTable } from './sortable-table.js'
 import { conversationRoute } from './conversation-table.js'
@@ -27,6 +27,7 @@ export function Overview({
       : !old
         ? 'No earlier activity to compare'
         : `${current >= old ? '+' : ''}${Math.round((current / old - 1) * 100)}% vs previous period`
+  const concentration = useMemo(() => deriveOutputConcentration(stats.conversations), [stats])
   const selected = stats.days.find(day => day.date === selectedDate)
   const times = new Map(stats.timing.projects.map(project => [project.id, project.usageMs]))
   const oldTimes = new Map(previous?.timing.projects.map(project => [project.id, project.usageMs]))
@@ -178,6 +179,40 @@ export function Overview({
           <Metric label="Total first-reply delay" value={formatDuration(stats.timing.summary.thinkingMs)} />
           <Metric label="Sessions" value={stats.summary.sessions} note="Grouped using the session definition above" />
         </dl>
+        <p>
+          Assistant words per user word:{' '}
+          {formatRatio(stats.summary.input.words ? stats.summary.output.words / stats.summary.input.words : null)}. This
+          describes output expansion, not quality.
+        </p>
+      </Disclosure>
+      <Disclosure title="Output concentration">
+        <p>
+          Share of assistant words from the top 1, 5, and 10 conversations:{' '}
+          {concentration.topConversationShares.map(share => formatShare(share.share)).join(' / ')}.
+        </p>
+        <SortableTable
+          label="Conversations ranked by output share"
+          rows={concentration.conversations}
+          columns={[
+            {
+              id: 'conversation',
+              label: 'Conversation',
+              align: 'left',
+              render: entry => (
+                <a href={conversationRoute(entry.conversation.id)}>{entry.conversation.title || 'Untitled chat'}</a>
+              ),
+            },
+            {
+              id: 'words',
+              label: 'Output words',
+              compare: (a, b) => a.outputWords - b.outputWords,
+              render: entry => entry.outputWords.toLocaleString(),
+            },
+            { id: 'share', label: 'Share', render: entry => formatShare(entry.share) },
+          ]}
+          initialSort={{ column: 'words', direction: 'descending' }}
+          rowKey={entry => entry.conversation.id}
+        />
       </Disclosure>
       <Methodology timing={stats.timing} />
     </>

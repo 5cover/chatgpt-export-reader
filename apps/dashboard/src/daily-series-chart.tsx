@@ -40,6 +40,10 @@ export function DailySeriesChart({
       }),
     ]
   }, [days, divisor])
+  const tableRows = useMemo(
+    () => days.map((day, index) => ({ ...day, rolling: series[2]![index]! * divisor })),
+    [days, series, divisor]
+  )
   useEffect(() => {
     if (!target.current || !days.length) return
     const chart = new uPlot(
@@ -150,7 +154,7 @@ export function DailySeriesChart({
           <Disclosure title="Daily values and keyboard navigation">
             <SortableTable
               label={`${title}: daily values`}
-              rows={days}
+              rows={tableRows}
               columns={[
                 {
                   id: 'date',
@@ -176,6 +180,7 @@ export function DailySeriesChart({
                   compare: (a, b) => a.value - b.value,
                   render: day => metric.format(day.value),
                 },
+                { id: 'rolling', label: '28-calendar-day mean', render: day => metric.format(day.rolling) },
               ]}
               initialSort={{ column: 'date' }}
               rowKey={day => day.date}

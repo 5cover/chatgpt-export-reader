@@ -1,7 +1,7 @@
 import { useMemo } from 'preact/hooks'
 import type { ConversationAnalytics, TimingStatistics } from '@chatgpt-export-reader/core'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
-import { ProjectLink } from './project-identity.js'
+import { ProjectLink, useProjectNames } from './project-identity.js'
 import { TextValue } from './ui.js'
 import { formatDuration } from './format.js'
 export const conversationRoute = (id: string) => `#/conversations/${encodeURIComponent(id)}`
@@ -12,6 +12,7 @@ export function ConversationTable({
   conversations: readonly ConversationAnalytics[]
   timing?: TimingStatistics
 }) {
+  const { names } = useProjectNames()
   const times = useMemo(() => new Map(timing?.conversations.map(chat => [chat.id, chat.usageMs])), [timing])
   const columns: SortableColumn<ConversationAnalytics>[] = [
     {
@@ -25,7 +26,10 @@ export function ConversationTable({
       id: 'project',
       label: 'Project',
       align: 'left',
-      compare: (a, b) => (a.projectId ?? '').localeCompare(b.projectId ?? ''),
+      compare: (a, b) =>
+        (names[a.projectId ?? ''] || a.projectId || 'Unassigned').localeCompare(
+          names[b.projectId ?? ''] || b.projectId || 'Unassigned'
+        ),
       render: chat => <ProjectLink id={chat.projectId ?? ''} />,
     },
     {

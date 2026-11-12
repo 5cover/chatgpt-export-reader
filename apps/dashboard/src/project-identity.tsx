@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'preact/hooks'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks'
 export const projectNamesKey = 'chatgpt-export-reader/project-names/v1'
 export type ProjectNames = Record<string, string>
 const listeners = new Set<() => void>()
@@ -98,7 +98,7 @@ export function ProjectNameEditor({ id }: { id: string }) {
   const trigger = useRef<HTMLButtonElement>(null)
   const wasEditing = useRef(false)
   const errorId = useId()
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (editing) {
       input.current?.focus()
       input.current?.select()

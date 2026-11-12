@@ -151,10 +151,15 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
         class="ui-button"
         type="button"
         onClick={() => {
-          void navigator.clipboard.writeText(text).then(
-            () => setState('Copied'),
-            () => setState('Copy failed. Select and copy the text manually.')
-          )
+          const copy = async () => {
+            try {
+              await navigator.clipboard.writeText(text)
+              setState('Copied')
+            } catch {
+              setState('Copy failed. Select and copy the text manually.')
+            }
+          }
+          void copy()
         }}>
         {label}
       </button>

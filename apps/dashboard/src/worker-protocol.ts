@@ -49,7 +49,13 @@ export type RequestInput =
   | ({ type: 'import'; source: ImportSource } & Scoped)
   | ({ type: 'statistics' } & Scoped)
   | ({ type: 'conversation-detail'; id: string } & Scoped)
-  | ({ type: 'conversation-outline'; id: string; offset: number; query?: string } & Scoped)
+  | ({
+      type: 'conversation-outline'
+      id: string
+      offset: number
+      query?: string
+      queryMode?: 'literal' | 'word-sequence'
+    } & Scoped)
   | ({ type: 'message-content'; id: string; ids: string[] } & Scoped)
   | ({ type: 'conversation-repetitions'; id: string } & Scoped)
   | ({

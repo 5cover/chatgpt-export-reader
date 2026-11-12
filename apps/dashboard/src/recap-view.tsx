@@ -6,7 +6,7 @@ import {
   type RecapContextStrategy,
   type RecapPromptModule,
 } from '@chatgpt-export-reader/core'
-import type { AnalysisScope } from './analysis-scope.js'
+import { scopeKey, type AnalysisScope } from './analysis-scope.js'
 import type { WorkerClient } from './worker-client.js'
 import { TimeZoneSelect } from './scope-controls.js'
 import { useProjectNames, readProjectNames } from './project-identity.js'
@@ -58,7 +58,7 @@ export function RecapView({
   const [error, setError] = useState('')
   const url = useRef<string>()
   const pending = useRef<AbortController>()
-  const evidenceKey = JSON.stringify([evidenceScope, strategy, messages, format, names])
+  const evidenceKey = JSON.stringify([scopeKey(evidenceScope), strategy, messages, format, names])
   useEffect(() => {
     pending.current?.abort()
     setGenerating(false)

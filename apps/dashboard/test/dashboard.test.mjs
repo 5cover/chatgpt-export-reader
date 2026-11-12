@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import { before, after, beforeEach, afterEach, test } from 'node:test'
 import { spawn } from 'node:child_process'
-import { access } from 'node:fs/promises'
+import { access, mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright-core'
+import AxeBuilder from '@axe-core/playwright'
 import { strToU8, zipSync } from 'fflate'
 import { syntheticExport } from './fixtures.mjs'
 const directory = fileURLToPath(new URL('..', import.meta.url))
-const baseURL = 'http://127.0.0.1:4178'
+const baseURL = `http://127.0.0.1:4178${process.env.GITHUB_ACTIONS ? '/chatgpt-export-reader/' : '/'}`
 let server, browser, context, page
 let errors = []
 before(async () => {
@@ -23,6 +24,7 @@ before(async () => {
     process.execPath,
     [
       fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url)),
+      'preview',
       '--host',
       '127.0.0.1',
       '--port',
@@ -70,16 +72,27 @@ beforeEach(async () => {
   await page.goto(baseURL)
 })
 afterEach(async () => {
+  if (process.env.DASHBOARD_ARTIFACT_DIR) {
+    await mkdir(process.env.DASHBOARD_ARTIFACT_DIR, { recursive: true })
+    await page.screenshot({ path: `${process.env.DASHBOARD_ARTIFACT_DIR}/${Date.now()}.png` })
+  }
   await context?.close()
   assert.deepEqual(errors, [], 'No unhandled application errors')
 })
-async function importData(records = syntheticExport()) {
+async function uploadData(records = syntheticExport()) {
   const buffer = Buffer.from(zipSync({ 'conversations.json': strToU8(JSON.stringify(records)) }))
   await page
     .locator('input[type=file]')
     .first()
     .setInputFiles({ name: 'synthetic-export.zip', mimeType: 'application/zip', buffer })
-  await page.locator('.summary-grid').first().waitFor()
+}
+async function importData(records = syntheticExport()) {
+  await uploadData(records)
+  try {
+    await page.locator('.summary-grid').first().waitFor()
+  } catch {
+    assert.fail(`Import did not complete: ${await page.locator('main').innerText()}`)
+  }
   await page.getByRole('button', { name: 'Apply scope', exact: true }).waitFor()
 }
 async function navigate(name) {
@@ -203,12 +216,22 @@ test('module changes retain evidence and copy feedback tracks prompt changes', {
   await page.getByRole('checkbox', { name: 'Room portrait', exact: true }).check()
   assert.equal(await download.getAttribute('href'), href)
   assert.match(await page.locator('.recap-prompt').innerText(), /Room portrait/)
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.getByRole('button', { name: 'Copy prompt', exact: true }).click()
+  await page.locator('.recap-prompt-card .action-status').getByText('Copied', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => navigator.clipboard.readText()),
+    await page.locator('.recap-prompt').innerText()
+  )
+  await page.getByRole('checkbox', { name: 'Room portrait', exact: true }).uncheck()
+  await page.waitForFunction(() => document.querySelector('.recap-prompt-card .action-status')?.textContent === '')
+  assert.equal(await download.getAttribute('href'), href)
   await page.getByRole('checkbox', { name: 'Use a different evidence scope' }).check()
   await page.locator('.recap-settings').getByLabel('From', { exact: true }).fill('2026-02-01')
   await download.waitFor({ state: 'detached' })
 })
 test(
-  'charts resize, retain zoom on measure changes, keep state when collapsed, and expose keyboard day selection',
+  'charts resize, retain actual zoom while updating plotted data, and expose keyboard day selection',
   { timeout: 30000 },
   async () => {
     await importData()
@@ -223,9 +246,20 @@ test(
     await page.mouse.up()
     const ticks = await page.locator('output[aria-label="Chart viewport"]').innerText()
     assert.notEqual(ticks, initialViewport)
+    const previousCanvas = await page
+      .locator('.chart canvas')
+      .first()
+      .evaluate(canvas => canvas.toDataURL())
     await page.getByRole('radio', { name: 'Prompts', exact: true }).check()
     await delay(100)
     assert.equal(await page.locator('output[aria-label="Chart viewport"]').innerText(), ticks)
+    assert.notEqual(
+      await page
+        .locator('.chart canvas')
+        .first()
+        .evaluate(canvas => canvas.toDataURL()),
+      previousCanvas
+    )
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForFunction(() =>
       [...document.querySelectorAll('.chart')].every(
@@ -235,7 +269,7 @@ test(
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
     await navigate('Time and rhythm')
     await page.getByText('Calendar rhythm', { exact: true }).click()
-    await page.getByRole('button', { name: /2026-03-11:.*Inspect conversations/ }).waitFor()
+    await page.getByRole('button', { name: /2026-03-11.*Inspect conversations/ }).waitFor()
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
   }
 )
@@ -260,7 +294,7 @@ test(
   }
 )
 test('malformed routes recover and schema diagnostics are inspectable', { timeout: 30000 }, async () => {
-  await page.goto(`${baseURL}/#/conversations/%`)
+  await page.goto(`${baseURL}#/conversations/%`)
   await page.getByRole('heading', { name: 'Page not found' }).waitFor()
   await page.getByRole('link', { name: 'Return to Overview.' }).click()
   await importData([...syntheticExport(3), { unexpected: true }])
@@ -268,3 +302,74 @@ test('malformed routes recover and schema diagnostics are inspectable', { timeou
   assert.match(await page.locator('main').innerText(), /1 records could not be imported/)
   assert.match(await page.locator('main').innerText(), /record 4/)
 })
+
+test(
+  'time-slice evidence shares scope, combines text units, and loads independent messages',
+  { timeout: 30000 },
+  async () => {
+    await importData()
+    await navigate('Time and rhythm')
+    await page.locator('.heatmap-cell a').first().click()
+    await page.getByRole('heading', { name: 'Time-slice evidence', exact: true }).waitFor()
+    await page.locator('.message-trigger').first().waitFor()
+    assert.equal(await page.locator('.summary-grid .metric').count(), 4)
+    assert.match(await page.locator('.summary-grid .metric').last().innerText(), /words[\s\S]*characters/)
+    await page.locator('.message-trigger').evaluateAll(buttons => buttons.slice(0, 2).forEach(button => button.click()))
+    await page.waitForFunction(() => document.querySelectorAll('.message-evidence pre').length === 2)
+    await page.getByRole('combobox', { name: 'Conversation', exact: true }).selectOption({ index: 1 })
+    await page.waitForFunction(() => document.querySelectorAll('.message-trigger').length === 1)
+  }
+)
+test('a cross-conversation session links to every contributor, not only the first', { timeout: 30000 }, async () => {
+  const source = syntheticExport()
+  const parallel = JSON.parse(JSON.stringify(source.at(-1)).replaceAll('chat-69', 'parallel-chat'))
+  parallel.title = 'Parallel activity'
+  await importData([...source, parallel])
+  await navigate('Time and rhythm')
+  await page.getByRole('table', { name: 'Sessions in scope', exact: true }).getByRole('link').first().click()
+  await page.getByRole('heading', { name: 'Contributing conversations', exact: true }).waitFor()
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Parallel activity', exact: true }).count(), 1)
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Research workflow 69', exact: true }).count(), 1)
+})
+test('worker startup failures are announced and a fresh import recovers', { timeout: 30000 }, async () => {
+  await context.route('**/stats-worker-*', route => route.abort())
+  await uploadData()
+  await page
+    .getByText('The analysis worker stopped unexpectedly. Import your export again to restart it.', { exact: true })
+    .waitFor()
+  await context.unroute('**/stats-worker-*')
+  await importData()
+  assert.equal(await page.getByRole('heading', { name: 'Overview', exact: true }).count(), 1)
+})
+
+test(
+  'rendered pages expose accessible names, states, landmarks, and readable contrast',
+  { timeout: 30000 },
+  async () => {
+    await importData()
+    for (const name of ['Overview', 'Time and rhythm', 'Projects', 'Conversations', 'Recap', 'About']) {
+      await navigate(name)
+      const results = await new AxeBuilder({ page }).analyze()
+      assert.deepEqual(
+        results.violations.map(issue => ({
+          id: issue.id,
+          impact: issue.impact,
+          nodes: issue.nodes.map(node => node.target),
+        })),
+        [],
+        name
+      )
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await navigate('Time and rhythm')
+    await page.getByText('Calendar rhythm', { exact: true }).click()
+    const result = await new AxeBuilder({ page }).analyze()
+    assert.deepEqual(
+      result.violations.map(issue => ({
+        id: issue.id,
+        nodes: issue.nodes.slice(0, 2).map(node => ({ html: node.html, checks: node.any.map(check => check.data) })),
+      })),
+      []
+    )
+  }
+)

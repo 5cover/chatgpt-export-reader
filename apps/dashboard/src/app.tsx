@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { readScope, scopeKey, writeScope, type AnalysisScope } from './analysis-scope.js'
 import { WorkerClient } from './worker-client.js'
 import type { Dataset, ImportSource, StatisticsResult } from './worker-protocol.js'
@@ -37,17 +37,22 @@ export function App() {
   const heading = useRef<HTMLHeadingElement>(null)
   const { names } = useProjectNames()
   const hasData = !!loaded
+  const routeKey = JSON.stringify(route)
   const title =
     route.page === 'projects' && route.id !== undefined
       ? `Project: ${names[route.id] || route.id || 'Unassigned'}`
       : route.page === 'conversation'
         ? loaded?.result.stats.conversations.find(chat => chat.id === route.id)?.title || 'Conversation evidence'
         : routeTitle(route)
-  useEffect(() => {
-    const hash = () => setRoute(readRoute())
+  useLayoutEffect(() => {
+    const hash = () => {
+      const next = readRoute()
+      setRoute(current => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
+    }
     const pop = () => {
-      setRoute(readRoute())
+      hash()
       setScope(readScope())
+      setSelectedDate(new URLSearchParams(location.search).get('day') ?? undefined)
     }
     addEventListener('hashchange', hash)
     addEventListener('popstate', pop)
@@ -60,9 +65,9 @@ export function App() {
   useEffect(() => {
     document.title = `${title} | ChatGPT Usage Atlas`
   }, [title])
-  useEffect(() => {
+  useLayoutEffect(() => {
     heading.current?.focus()
-  }, [route, hasData])
+  }, [routeKey, hasData])
   useEffect(() => {
     if (!client || !dataset || lastScope.current === scopeKey(scope)) return
     const controller = new AbortController()
@@ -141,12 +146,14 @@ export function App() {
     if (route.page === 'session') location.hash = '#/rhythm'
     setScope(next)
   }
-  const selectDay = (date: string) => {
-    setSelectedDate(date)
+  useEffect(() => {
     const url = new URL(location.href)
-    url.searchParams.set('day', date)
+    if (selectedDate) url.searchParams.set('day', selectedDate)
+    else url.searchParams.delete('day')
     history.replaceState(null, '', url)
-  }
+  }, [selectedDate])
+  const selectDay = (date: string) => setSelectedDate(date)
+
   return (
     <>
       <a class="skip-link" href="#analysis-content">
@@ -177,7 +184,13 @@ export function App() {
       <Nav route={route} hasData={hasData} />
       <main id="analysis-content">
         <h2 ref={heading} tabIndex={-1} class="page-title">
-          {hasData || route.page === 'not-found' ? title : 'Explore your export'}
+          {hasData || route.page === 'not-found'
+            ? route.page === 'conversation'
+              ? 'Conversation evidence'
+              : route.page === 'projects' && route.id !== undefined
+                ? 'Project'
+                : title
+            : 'Explore your export'}
         </h2>
         {error && <Status title="Analysis unavailable" detail={error} error />}
         {importing && <Status title="Importing export" detail={progress} />}{' '}
