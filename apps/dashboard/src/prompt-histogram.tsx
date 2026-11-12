@@ -7,7 +7,6 @@ export function PromptHistogram({ bins }: { bins: readonly PromptDistributionBin
     <section class="chart-card">
       <div class="chart-heading">
         <div>
-          <p class="eyebrow">Prompt distribution</p>
           <h2>How many prompts do you send on a day?</h2>
         </div>
       </div>

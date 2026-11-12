@@ -1,7 +1,7 @@
 :root {
   color: #1d2a2c;
   background: #edf2ef;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 * {
   box-sizing: border-box;
@@ -12,7 +12,9 @@ body {
   background: radial-gradient(circle at 80% 0%, #dae8de 0, transparent 34rem), #edf2ef;
 }
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 main {
@@ -42,6 +44,7 @@ p {
   margin-top: 0;
 }
 h1 {
+  font-family: Georgia, 'Times New Roman', serif;
   margin-bottom: 10px;
   font-size: clamp(2.7rem, 8vw, 5.7rem);
   line-height: 0.9;
@@ -53,6 +56,7 @@ h2 {
   letter-spacing: -0.03em;
 }
 .subtitle {
+  font-family: Georgia, 'Times New Roman', serif;
   margin: 0;
   color: #526367;
   font-size: 1.15rem;
@@ -140,6 +144,19 @@ h2 {
   font-size: 2rem;
   letter-spacing: -0.05em;
 }
+.metric-units { display: grid; gap: 3px; }
+.metric-units strong { line-height: 1.1; }
+.metric-units small { color: #bdd1c9; font-size: 0.8rem; }
+.ui-button { padding: 8px 12px; border: 1px solid #aebcb7; border-radius: 6px; color: #1d5d59; background: #fff; font: 600 0.85rem ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
+.ui-button:hover, .ui-button:focus-visible { background: #e5eee9; border-color: #1d5d59; }
+.project-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 18px 0; }
+.project-actions label { display: inline-flex; }
+.project-label { font-weight: 650; color: #1d5d59; }
+.editable-project { display: inline-block; cursor: text; border-bottom: 1px dashed #819d98; }
+.editable-project:hover, .editable-project:focus-visible { border-color: #1d5d59; outline: none; background: #e5eee9; }
+.project-breakdown { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 6px; }
+.project-breakdown li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; background: #eef4f1; }
+.project-breakdown a { text-decoration: none; }
 .toolbar {
   display: flex;
   align-items: center;
@@ -292,7 +309,7 @@ td code {
   display: block;
 }
 td strong {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 1rem;
 }
 td code {
@@ -306,7 +323,7 @@ td code {
 .phrase-table td.left {
   min-width: 360px;
   padding: 0;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 .phrase-copy {
   display: block;
@@ -557,10 +574,7 @@ td a,
   gap: 3px;
 }
 .accordion > h2 strong {
-  font:
-    700 clamp(1.05rem, 2vw, 1.35rem)/1.2 Georgia,
-    'Times New Roman',
-    serif;
+  font: 700 clamp(1.05rem, 2vw, 1.35rem)/1.2 ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.02em;
 }
 .accordion > h2 small {
@@ -624,6 +638,13 @@ td a,
   max-width: 100%;
   overflow-x: auto;
 }
+.calendar-card .heatmap-table-wrap { overflow-x: visible; }
+.calendar-card .heatmap-table { width: 100%; min-width: 0; table-layout: fixed; border-spacing: 2px; }
+.calendar-card .heatmap-table th { min-width: 0; padding: 5px 0; font-size: 0.6rem; }
+.calendar-card .heatmap-table th[scope='row'], .calendar-card .heatmap-table .heatmap-corner { width: 6rem; min-width: 0; }
+.calendar-card .heatmap-table td { min-width: 0; }
+.calendar-card .heatmap-cell > span { padding: 8px 0; font-size: 0.65rem; overflow: hidden; }
+@media (max-width: 700px) { .calendar-card .heatmap-table { border-spacing: 1px; } .calendar-card .heatmap-table th[scope='row'], .calendar-card .heatmap-table .heatmap-corner { width: 4rem; } .calendar-card .heatmap-cell > span { color: transparent; font-size: 0.1rem; } }
 .heatmap-table {
   width: max-content;
   min-width: 100%;
@@ -825,10 +846,7 @@ td a,
   color: #1d2a2c;
   background: transparent;
   cursor: pointer;
-  font:
-    700 0.95rem/1.45 Georgia,
-    'Times New Roman',
-    serif;
+  font: 700 0.95rem/1.45 ui-sans-serif, system-ui, sans-serif;
   text-align: left;
 }
 .time-message > button:hover {
@@ -1199,6 +1217,12 @@ td a,
 .recap-prompt-card h2 {
   font-size: 1.35rem;
 }
+.recap-composer { display: grid; grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.5fr); gap: 16px; margin-top: 16px; align-items: start; }
+.recap-module-list { display: grid; gap: 10px; }
+.recap-module { display: flex; align-items: start; gap: 9px; padding: 9px 0; border-top: 1px solid #d8e0df; cursor: pointer; }
+.recap-module input { margin-top: 3px; }
+.recap-module span { display: grid; gap: 3px; }
+.recap-module small { color: #526367; line-height: 1.4; }
 .recap-copy {
   flex: none;
   padding: 7px 10px;
@@ -1207,10 +1231,9 @@ td a,
   cursor: pointer;
 }
 .recap-prompt {
-  max-height: 360px;
   margin: 0;
   padding: 14px;
-  overflow: auto;
+  overflow-wrap: anywhere;
   color: #183638;
   background: #eef4f1;
   font:
@@ -1218,6 +1241,7 @@ td a,
     monospace;
   white-space: pre-wrap;
 }
+@media (max-width: 850px) { .recap-composer { grid-template-columns: 1fr; } }
 @media (max-width: 850px) {
   .analytics-metrics {
     grid-template-columns: repeat(2, 1fr);

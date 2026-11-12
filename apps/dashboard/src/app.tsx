@@ -26,7 +26,7 @@ import { HeatmapTable, type HeatmapRow } from './heatmap-table.js'
 import { PromptHistogram } from './prompt-histogram.js'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
 import { TimingChart } from './timing-chart.js'
-import { Projects, readProjectNames } from './projects.js'
+import { ProjectLabel, Projects, readProjectNames } from './projects.js'
 
 type ImportState =
   | { kind: 'idle' }
@@ -123,7 +123,7 @@ export function App() {
     contextStrategy: 'rolling-window',
     contextMessages: 20,
     contextFormat: 'yaml',
-    modules: ['investigator', 'themes', 'behavior', 'friction', 'prompting'],
+    modules: ['interpretation', 'investigation', 'interaction', 'temporal', 'writing', 'themes', 'behavior', 'friction', 'prompting'],
   })
   const [recap, setRecap] = useState<RecapState>({ kind: 'idle' })
 
@@ -733,6 +733,19 @@ function RecapView({
   onGenerate: () => void
 }) {
   const prompt = createRecapPrompt(settings.contextFormat, settings.modules)
+  const descriptions: Record<RecapPromptModule, string> = {
+    interpretation: 'Use for a reflective account; omit for a factual inventory.',
+    investigation: 'Use to test hypotheses and exceptions; omit for a quick recap.',
+    interaction: 'Use to trace working methods and feedback loops; omit for topic-only coverage.',
+    temporal: 'Use for changes across time; omit when the selected period is too brief.',
+    writing: 'Use for a coherent written story; omit for lists or image-only output.',
+    themes: 'Use for recurring subjects and projects; omit when topics are not the focus.',
+    behavior: 'Use for repeated user and assistant moves; omit for a subject summary.',
+    friction: 'Use to examine corrections and costly loops; omit if you want a celebratory recap.',
+    prompting: 'Use for languages, formats, and instruction habits; omit if prompt craft is irrelevant.',
+    recommendations: 'Use for evidence-based workflow advice; omit for a descriptive recap.',
+    room: 'Use for a visual portrait; attach a room image to preserve its architecture, or omit for text only.',
+  }
   return (
     <>
       <section class="recap-heading">
@@ -751,12 +764,9 @@ function RecapView({
         }}>
         <label>
           Timezone
-          <input
-            type="text"
-            value={settings.timeZone}
-            placeholder="Europe/Paris"
-            onInput={event => onChange({ timeZone: event.currentTarget.value })}
-          />
+          <select value={settings.timeZone} onChange={event => onChange({ timeZone: event.currentTarget.value })}>
+            {[settings.timeZone, localTimeZone(), 'UTC', ...Intl.supportedValuesOf('timeZone')].filter((value, index, all) => all.indexOf(value) === index).map(value => <option value={value} key={value}>{value === localTimeZone() ? `${value} (current)` : value}</option>)}
+          </select>
         </label>
         <label>
           Start date
@@ -820,12 +830,11 @@ function RecapView({
           <small>Dates are inclusive. Leave either date empty to use the available range.</small>
         </div>
       </form>
-      <section class="recap-prompt-card"><h2>Prompt modules</h2><p class="chart-note">The evidence and processing core is always included. Modules follow a fixed order.</p>
-        {recapPromptModules.map(module => <label key={module}><input type="checkbox" checked={settings.modules.includes(module)} onChange={event => onChange({ modules: event.currentTarget.checked ? [...settings.modules, module] : settings.modules.filter(value => value !== module) })} /> {module === 'room' ? 'Room portrait' : module[0]!.toUpperCase() + module.slice(1)}</label>)}
-      </section>
-      <section class="recap-prompt-card">
-        <div class="chart-heading"><div><p class="eyebrow">Prompt preview</p><h2>Use this with the downloaded context.</h2></div><CopyRecapPrompt prompt={prompt} /></div>
-        <pre class="recap-prompt">{prompt}</pre>
+      <section class="recap-composer">
+        <div class="recap-prompt-card recap-module-list"><h2>Prompt modules</h2><p class="chart-note">Evidence and processing instructions are always included.</p>
+          {recapPromptModules.map(module => <label class="recap-module" key={module}><input type="checkbox" checked={settings.modules.includes(module)} onChange={event => onChange({ modules: event.currentTarget.checked ? [...settings.modules, module] : settings.modules.filter(value => value !== module) })} /><span><strong>{module === 'room' ? 'Room portrait' : module[0]!.toUpperCase() + module.slice(1)}</strong><small>{descriptions[module]}</small></span></label>)}
+        </div>
+        <section class="recap-prompt-card"><div class="chart-heading"><h2>Prompt preview</h2><CopyRecapPrompt prompt={prompt} /></div><pre class="recap-prompt">{prompt}</pre></section>
       </section>
       {state.kind === 'error' && <Status title="Recap unavailable" detail={state.message} error />}
       {state.kind === 'ready' && (
@@ -908,22 +917,18 @@ function Overview({
         <Metric label="Sessions" value={stats.summary.sessions} />
         <Metric label="Estimated use" value={formatDuration(stats.timing.summary.usageMs)} />
         <Metric label="Reply latency" value={formatDuration(stats.timing.summary.thinkingMs)} />
-        <Metric label="Long waits" value={stats.timing.summary.longWaits} />
-        <Metric label="Unmatched prompts" value={stats.timing.summary.unmatchedPrompts} />
-        <Metric label="Untimed prompts" value={stats.timing.summary.invalidPrompts} />
         <Metric label="Prompts" value={stats.summary.prompts} />
-        <Metric label="Input words" value={stats.summary.input.words} />
-        <Metric label="Output words" value={stats.summary.output.words} />
-        <Metric label="Input characters" value={stats.summary.input.characters} />
-        <Metric label="Output characters" value={stats.summary.output.characters} />
+        <MultiUnitMetric label="Input" primary={{ value: stats.summary.input.words, unit: 'words' }} secondary={{ value: stats.summary.input.characters, unit: 'characters' }} />
+        <MultiUnitMetric label="Output" primary={{ value: stats.summary.output.words, unit: 'words' }} secondary={{ value: stats.summary.output.characters, unit: 'characters' }} />
         <Metric label="Output / input" value={formatRatio(metrics.outputToInputWordRatio)} />
       </section>
       <Accordion title="Time spent" description="Estimated reading and typing, with daily evolution." defaultOpen>
         <TimingChart timing={stats.timing} calendarDays={stats.days.map(day => day.date)} onSelectDate={onSelectDate} />
         <p class="chart-note">{stats.timing.days.filter(day => day.usageMs >= 7_200_000).length} days estimated at 2 hours or more. The busiest day was {stats.timing.days.reduce<(typeof stats.timing.days)[number] | undefined>((best, day) => !best || day.usageMs > best.usageMs ? day : best, undefined)?.id ?? 'none'}.</p>
         {selectedDate && <section><h3>Time on {selectedDate}</h3><p>Estimated use: {formatDuration(stats.timing.days.find(day => day.id === selectedDate)?.usageMs ?? 0)}. Reply latency: {formatDuration(stats.timing.days.find(day => day.id === selectedDate)?.thinkingMs ?? 0)}.</p>
-          <ul>{stats.timing.projectDays.filter(day => day.date === selectedDate).sort((a, b) => b.usageMs - a.usageMs).map(day => <li key={day.id}><a href="#/projects">{readProjectNames()[day.projectId] || day.title}</a>: {formatDuration(day.usageMs)} estimated use</li>)}</ul></section>}
+          <ul class="project-breakdown">{stats.timing.projectDays.filter(day => day.date === selectedDate).sort((a, b) => b.usageMs - a.usageMs).map(day => <li key={day.id}><a href="#/projects"><ProjectLabel id={day.projectId} name={readProjectNames()[day.projectId]} /></a><span>{formatDuration(day.usageMs)}</span></li>)}</ul></section>}
         <p class="chart-note">Reply latency counts one first branch reply per prompt up to 30 minutes. Longer waits total {formatDuration(stats.timing.summary.longWaitMs)} and are excluded.</p>
+        <p class="chart-note">Timing coverage: {stats.timing.summary.longWaits} long waits over 30 minutes, {stats.timing.summary.unmatchedPrompts} prompts without an eligible reply, and {stats.timing.summary.invalidPrompts} prompts without a usable timestamp.</p>
       </Accordion>
       <Accordion title="Activity over time" description="Compare daily message and text volume." defaultOpen>
         <section class="metric-picker">
@@ -942,12 +947,6 @@ function Overview({
           onSelectDate={onSelectDate}
         />
       </Accordion>
-      <Accordion title="Calendar and distribution" description="See active days and the range of daily prompt counts.">
-        <section class="two-up">
-          <CalendarHeatmap days={stats.days} metric={metric} />
-          <PromptHistogram bins={metrics.promptDistribution} />
-        </section>
-      </Accordion>
       {selected && (
         <Accordion
           title={`Conversations on ${selected.date}`}
@@ -955,6 +954,12 @@ function Overview({
           <DayAttribution day={selected} />
         </Accordion>
       )}
+      <Accordion title="Calendar rhythm" description="Daily activity across the calendar.">
+        <CalendarHeatmap days={stats.days} metric={metric} />
+      </Accordion>
+      <Accordion title="Prompt distribution" description="How daily prompt counts vary.">
+        <PromptHistogram bins={metrics.promptDistribution} />
+      </Accordion>
       <Accordion title="Usage concentration" description="See which conversations account for the most output.">
         <Concentration concentration={metrics.outputConcentration} />
       </Accordion>
@@ -1256,15 +1261,11 @@ function ConversationList({ conversations }: { conversations: readonly Conversat
     [conversations, query]
   )
   return (
-    <Accordion
-      title="All conversations"
-      description={`${rows.length.toLocaleString()} conversations match the current search.`}
-      defaultOpen>
+    <>
       <section class="breakdown-card">
         <div class="chart-heading">
           <div>
-            <p class="eyebrow">Conversation inventory</p>
-            <h2>Compare conversation volume and duration.</h2>
+            <h2>Conversations <small>({rows.length.toLocaleString()})</small></h2>
           </div>
           <input
             class="search"
@@ -1280,7 +1281,7 @@ function ConversationList({ conversations }: { conversations: readonly Conversat
           rowKey={chat => chat.id}
         />
       </section>
-    </Accordion>
+    </>
   )
 }
 function ConversationView({
@@ -1528,10 +1529,9 @@ function CalendarHeatmap({ days, metric }: { days: readonly AnalyticsDay[]; metr
   const rows = calendarHeatmapRows(days, metric)
   const label = metricLabel(metric).toLocaleLowerCase()
   return (
-    <section class="chart-card">
+    <section class="chart-card calendar-card">
       <div class="chart-heading">
         <div>
-          <p class="eyebrow">Calendar rhythm</p>
           <h2>Daily {metricLabel(metric).toLocaleLowerCase()} at a glance.</h2>
         </div>
       </div>
@@ -1795,6 +1795,9 @@ function Metric({ label, value }: { label: string; value: number | string }) {
       <strong>{typeof value === 'number' ? formatNumber(value) : value}</strong>
     </div>
   )
+}
+function MultiUnitMetric({ label, primary, secondary }: { label: string; primary: { value: number; unit: string }; secondary: { value: number; unit: string } }) {
+  return <div class="metric"><span>{label}</span><div class="metric-units"><strong>{formatNumber(primary.value)} {primary.unit}</strong><small>{formatNumber(secondary.value)} {secondary.unit}</small></div></div>
 }
 function About() {
   return (

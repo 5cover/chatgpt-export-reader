@@ -31,6 +31,15 @@ Use TypeScript with strict compiler settings. Follow the existing style in the r
 - Use descriptive lower-case filenames with hyphens for utilities (for example `fast-markdown.ts`).
 - Keep parsing, transformation, and output concerns separated by directory.
 
+## Dashboard UI Guidelines
+
+- Use a consistent sans-serif default for controls, metrics, tables, and routine UI copy. Reserve serif typography for editorial hero text or substantial prose where it adds meaning.
+- Reuse shared visual patterns for indicators, project names, buttons, and lists. Related units of one quantity belong in one indicator, with a clear primary and secondary value.
+- Keep overview indicators focused on user-facing insights. Put coverage, missing-data, and algorithm details near the relevant chart or in secondary notes.
+- Avoid nested headings, repeated section labels, and one-item accordions. Related content should follow the control or chart that drives it.
+- When a chart setting changes, update the plotted data and retain the user's zoom unless the underlying date range changes. Check behavior, not only labels, when validating chart controls.
+- Check full-width and narrow layouts for dense tables and prompt builders. Keep the recap prompt visible beside module controls on wide screens, and explain each optional module.
+
 Do not hand-format around lint rules; run ESLint and keep changes minimal.
 
 ## Testing Guidelines

@@ -4,11 +4,12 @@ import { TimingChart } from './timing-chart.js'
 
 const storageKey = 'chatgpt-export-reader/project-names/v1'
 type Names = Record<string, string>
+export function ProjectLabel({ id, name }: { id: string; name?: string }) { return <span class="project-label">{name || id || 'Unassigned'}</span> }
 function ProjectName({ id, name, onSave }: { id: string; name?: string; onSave: (name: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(name ?? '')
   const finish = (save: boolean) => { if (save) onSave(draft.trim()); setEditing(false) }
-  if (!editing) return <><button type="button" aria-label={`Rename project ${name || id}`} onClick={() => { setDraft(name ?? ''); setEditing(true) }}>{name || id}</button><small>{name ? id : 'Click to rename'}</small></>
+  if (!editing) return <span class="editable-project" role="button" tabIndex={0} title="Click to rename" aria-label={`Rename project ${name || id}`} onClick={() => { setDraft(name ?? ''); setEditing(true) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setDraft(name ?? ''); setEditing(true) } }}><ProjectLabel id={id} name={name} /></span>
   return <input autoFocus aria-label={`Name for project ${id}`} value={draft} onInput={event => setDraft(event.currentTarget.value)} onBlur={() => finish(true)} onKeyDown={event => { if (event.key === 'Enter') finish(true); if (event.key === 'Escape') finish(false) }} />
 }
 export function readProjectNames(): Names {
@@ -51,13 +52,13 @@ export function Projects({ stats }: { stats: AnalyticsStatistics }) {
   return <section class="chart-card">
     <h2>Projects</h2>
     <p class="chart-note">Rename project IDs inline. Names stay in this browser; export a mapping to use them elsewhere. Unassigned chats cannot be renamed.</p>
-    <div class="recap-actions"><button type="button" onClick={exportNames}>Export names</button><label>Import names <input type="file" accept="application/json,.json" onChange={event => void importNames(event.currentTarget.files?.[0])} /></label></div>
+    <div class="project-actions"><button class="ui-button" type="button" onClick={exportNames}>Export names</button><label class="ui-button">Import names<input class="import-input" type="file" accept="application/json,.json" onChange={event => void importNames(event.currentTarget.files?.[0])} /></label></div>
     <label><input type="checkbox" checked={onlyUnnamed} onChange={event => setOnlyUnnamed(event.currentTarget.checked)} /> Show only unnamed projects ({stats.projects.filter(project => project.id && !names[project.id]).length})</label>
     {error && <p role="alert">{error}</p>}
-    <div class="table-wrap"><table><thead><tr><th>Project</th><th>Chats</th><th>Prompts</th><th>Messages</th><th>Input words</th><th>Output words</th><th>Estimated use</th><th>Reply latency</th><th>Long waits</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Project</th><th>Chats</th><th>Prompts</th><th>Messages</th><th>Input words</th><th>Output words</th><th>Estimated use</th><th>Reply latency</th><th>Long waits</th><th>Details</th></tr></thead><tbody>
       {stats.projects.filter(project => !onlyUnnamed || (project.id && !names[project.id])).map(project => { const time = timing.projects.find(value => value.id === project.id); return <tr key={project.id}><td>
         {project.id ? <ProjectName id={project.id} name={names[project.id]} onSave={name => { const next = { ...names }; if (name) next[project.id] = name; else delete next[project.id]; save(next) }} /> : 'Unassigned'}
-      </td><td>{project.chats}</td><td>{project.prompts}</td><td>{project.messages}</td><td>{project.input.words}</td><td>{project.output.words}</td><td><button type="button" onClick={() => setSelectedId(project.id)}>{Math.round((time?.usageMs ?? 0) / 60_000)} min</button></td><td>{Math.round((time?.thinkingMs ?? 0) / 60_000)} min</td><td>{time?.longWaits ?? 0}</td></tr> })}
+      </td><td>{project.chats}</td><td>{project.prompts}</td><td>{project.messages}</td><td>{project.input.words}</td><td>{project.output.words}</td><td>{Math.round((time?.usageMs ?? 0) / 60_000)} min</td><td>{Math.round((time?.thinkingMs ?? 0) / 60_000)} min</td><td>{time?.longWaits ?? 0}</td><td><button class="ui-button" type="button" onClick={() => setSelectedId(project.id)}>Details</button></td></tr> })}
     </tbody></table></div>
     {selectedId !== undefined && <section><h3>{names[selectedId] || selectedId || 'Unassigned'} by day</h3>
       <TimingChart timing={{ ...timing, days: timing.projectDays.filter(day => day.projectId === selectedId).map(day => ({ ...day, id: day.date })) }} calendarDays={stats.days.map(day => day.date)} />
