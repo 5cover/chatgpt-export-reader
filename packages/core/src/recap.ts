@@ -188,9 +188,10 @@ export function serializeRecapToon(document: RecapDocument): string {
 export type RecapPromptModule = 'investigator' | 'themes' | 'behavior' | 'friction' | 'prompting' | 'recommendations' | 'room'
 export const recapPromptModules: readonly RecapPromptModule[] = ['investigator', 'themes', 'behavior', 'friction', 'prompting', 'recommendations', 'room']
 
-export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml', modules: readonly RecapPromptModule[] = ['investigator']): string {
+export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml', modules?: readonly RecapPromptModule[]): string {
   if (contextFormat !== 'yaml' && contextFormat !== 'toon')
     throw new RangeError(`unknown recap context format: ${contextFormat}`)
+  if (modules === undefined) return legacyRecapPrompt(contextFormat)
   const unknown = modules.find(module => !recapPromptModules.includes(module))
   if (unknown) throw new RangeError(`unknown recap module: ${unknown}`)
   const core = `# ChatGPT Usage Recap
