@@ -74,3 +74,12 @@ test('calendar days are stable in extreme offsets and across DST', () => {
     )
   }
 })
+
+test('a shared calendar retains untimed activity without changing group totals', () => {
+  const source = [chat('dated', 'project-1', 'user', 'one'), chat('untimed', 'project-1', 'user', 'two', undefined)]
+  source[1].messages[0].createTime = undefined
+  const result = collectAnalytics(source, { calendarRange: { startDate: '2026-01-01', endDate: '2026-01-04' } })
+  assert.equal(result.summary.prompts, 2)
+  assert.equal(result.days.length, 4)
+  assert.equal(result.days[0].date, '2026-01-01')
+})

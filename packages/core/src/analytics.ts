@@ -11,6 +11,8 @@ export type AnalyticsOptions = {
   startDate?: string
   endDate?: string
   sessionGapMinutes?: number
+  /** Emit a stable calendar across groups without filtering untimed messages. */
+  calendarRange?: { startDate: string; endDate: string }
 }
 
 export type AnalyticsSummary = {
@@ -806,6 +808,14 @@ function createContext(options: AnalyticsOptions): Context {
   const endDate = options.endDate === undefined ? undefined : validateDate(options.endDate, 'end')
   if (startDate !== undefined && endDate !== undefined && startDate > endDate)
     throw new RangeError('startDate must be on or before endDate.')
+  const calendarRange =
+    options.calendarRange === undefined
+      ? undefined
+      : {
+          startDate: validateDate(options.calendarRange.startDate, 'start'),
+          endDate: validateDate(options.calendarRange.endDate, 'end'),
+        }
+  if (calendarRange && calendarRange.startDate > calendarRange.endDate) throw new RangeError('Invalid calendar range.')
   const sessionGapMinutes = options.sessionGapMinutes ?? 60
   if (!Number.isFinite(sessionGapMinutes) || sessionGapMinutes < 1 || sessionGapMinutes > 1_440)
     throw new RangeError('sessionGapMinutes must be between 1 and 1440.')
@@ -825,6 +835,7 @@ function createContext(options: AnalyticsOptions): Context {
   return {
     startDate,
     endDate,
+    calendarRange,
     sessionGapMs: sessionGapMinutes * 60_000,
     segmenter,
     dayKey(timestamp) {
@@ -842,6 +853,7 @@ function createContext(options: AnalyticsOptions): Context {
 }
 
 type Context = {
+  calendarRange?: { startDate: string; endDate: string }
   startDate?: string
   endDate?: string
   sessionGapMs: number
@@ -942,8 +954,8 @@ function toConversation(value: MutableConversation): ConversationAnalytics {
 }
 function fillDays(days: ReadonlyMap<string, MutableDay>, context: Context): AnalyticsDay[] {
   const present = [...days.keys()].sort()
-  const start = context.startDate ?? present[0]
-  const end = context.endDate ?? present.at(-1)
+  const start = context.startDate ?? context.calendarRange?.startDate ?? present[0]
+  const end = context.endDate ?? context.calendarRange?.endDate ?? present.at(-1)
   if (start === undefined || end === undefined || start > end) return []
   const result: AnalyticsDay[] = []
   const current = new Date(`${start}T00:00:00Z`)
