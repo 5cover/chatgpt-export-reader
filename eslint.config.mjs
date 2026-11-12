@@ -66,6 +66,10 @@ export default defineConfig([
     languageOptions: { globals: globals.browser },
   },
   {
+    files: ['apps/dashboard/test/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
     files: ['apps/dashboard/src/stats-worker.ts'],
     languageOptions: { globals: globals.worker },
   },
@@ -76,6 +80,8 @@ export default defineConfig([
     rules: {
       // Preact shares the hook lifecycle, but does not use the React Compiler.
       'react-hooks/rules-of-hooks': 'error',
+      // Named scroll regions need focus for keyboard access to overflowed tables.
+      'jsx-a11y/no-noninteractive-tabindex': ['error', { roles: ['region'] }],
       'react-hooks/exhaustive-deps': 'error',
     },
   },

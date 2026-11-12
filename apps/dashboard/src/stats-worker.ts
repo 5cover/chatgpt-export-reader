@@ -10,231 +10,206 @@ import {
   getMessageContents,
   isEmptyV1Record,
   normalizeV1Chat,
-  type AnalyticsStatistics,
-  type Chat,
-  type ConversationDetail,
-  type MessageContent,
-  type RepeatedPhraseAnalysis,
-  type RecapContextFormat,
-  type RecapContextStrategy,
-  type TemporalConversation,
-  type TemporalMessageEvidence,
-  type TemporalMessageFilter,
-  type TemporalMessageSlice,
-  type TurnPage,
-  createRecapPrompt,
   serializeRecapToon,
   serializeRecapYaml,
+  type Chat,
+  type RepeatedPhraseAnalysis,
+  type TemporalMessageSlice,
 } from '@chatgpt-export-reader/core'
-
-type SharedOptions = { localTimeZone: string; startDate?: string; sessionGapMinutes: number }
-type ImportSource = { kind: 'folder'; files: File[] } | { kind: 'zip'; archive: File }
-type ImportRequest = { type: 'import'; requestId: number; source: ImportSource } & SharedOptions
-type StatisticsRequest = { type: 'statistics'; requestId: number } & SharedOptions
-type DetailRequest = {
-  type: 'conversation-detail'
-  requestId: number
-  id: string
-  timeZone: string
-  startDate?: string
-  sessionGapMinutes: number
-}
-type OutlineRequest = {
-  type: 'conversation-outline'
-  requestId: number
-  id: string
-  timeZone: string
-  startDate?: string
-  sessionGapMinutes: number
-  offset: number
-  limit: number
-  query?: string
-}
-type ContentRequest = {
-  type: 'message-content'
-  requestId: number
-  id: string
-  timeZone: string
-  startDate?: string
-  sessionGapMinutes: number
-  ids: string[]
-}
-type ConversationRepetitionsRequest = {
-  type: 'conversation-repetitions'
-  requestId: number
-  id: string
-  timeZone: string
-  startDate?: string
-}
-type TemporalSliceRequest = {
-  type: 'temporal-slice'
-  requestId: number
-  timeZone: string
-  startDate?: string
-  filter: TemporalMessageFilter
-  conversationId?: string
-  order: 'newest' | 'oldest'
-  offset: number
-  limit: number
-}
-type TemporalContentRequest = {
-  type: 'temporal-content'
-  requestId: number
-  cacheKey: string
-  ids: string[]
-}
-type RecapRequest = {
-  type: 'recap'
-  requestId: number
-  timeZone: string
-  startDate?: string
-  endDate?: string
-  sessionGapMinutes: number
-  contextStrategy: RecapContextStrategy
-  contextMessages: number
-  contextFormat: RecapContextFormat
-  projectNames?: Record<string, string>
-}
-type Request =
-  | ImportRequest
-  | StatisticsRequest
-  | DetailRequest
-  | OutlineRequest
-  | ContentRequest
-  | ConversationRepetitionsRequest
-  | TemporalSliceRequest
-  | TemporalContentRequest
-  | RecapRequest
-
-type Progress = {
-  type: 'progress'
-  requestId: number
-  fileName: string
-  fileIndex: number
-  fileCount?: number
-  bytesRead: number
-  bytesTotal?: number
-  chats: number
-  skipped: number
-  archiveName?: string
-}
-type Complete = {
-  type: 'complete'
-  requestId: number
-  local: AnalyticsStatistics
-  utc: AnalyticsStatistics
-  chats: number
-  skipped: number
-  durationMs: number
-  startDate?: string
-  sessionGapMinutes: number
-}
-type Statistics = {
-  type: 'statistics'
-  requestId: number
-  local: AnalyticsStatistics
-  utc: AnalyticsStatistics
-  startDate?: string
-  sessionGapMinutes: number
-}
-type Detail = { type: 'conversation-detail'; requestId: number; id: string; detail?: ConversationDetail }
-type Outline = { type: 'conversation-outline'; requestId: number; id: string; page: TurnPage }
-type Content = { type: 'message-content'; requestId: number; id: string; contents: MessageContent[] }
-type ConversationRepetitions = {
-  type: 'conversation-repetitions'
-  requestId: number
-  id: string
-  analysis: RepeatedPhraseAnalysis
-}
-type TemporalMessagePreview = Omit<TemporalMessageEvidence, 'body'>
-type TemporalSlicePage = {
-  type: 'temporal-slice'
-  requestId: number
-  cacheKey: string
-  filter: TemporalMessageFilter
-  summary: TemporalMessageSlice['summary']
-  conversations: TemporalConversation[]
-  offset: number
-  total: number
-  messages: TemporalMessagePreview[]
-}
-type TemporalContent = {
-  type: 'temporal-content'
-  requestId: number
-  contents: MessageContent[]
-}
-type Recap = {
-  type: 'recap'
-  requestId: number
-  context: Blob
-  contextFormat: RecapContextFormat
-  prompt: string
-}
-type Failure = { type: 'failure'; requestId: number; operation: Request['type']; message: string }
-
+import { period, previousPeriod, type AnalysisScope } from './analysis-scope.js'
+import type {
+  WorkerRequest,
+  WorkerResponse,
+  Progress,
+  StatisticsResult,
+  Dataset,
+  ImportDiagnostic,
+} from './worker-protocol.js'
 const worker = globalThis
 const retainedChats: Chat[] = []
 const retainedChatsById = new Map<string, Chat[]>()
 const repeatedPhraseCache = new Map<string, RepeatedPhraseAnalysis>()
 let temporalCache: { key: string; slice: TemporalMessageSlice } | undefined
 const MAX_ARCHIVE_EXTRACTED_BYTES = 1_000_000_000
-
-worker.addEventListener('message', (event: MessageEvent<Request>) => {
+const availablePeriods = new Map<string, ReturnType<typeof period>>()
+worker.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
   const request = event.data
-  const operation = Promise.resolve().then(() =>
-    request.type === 'import'
-      ? importExport(request)
-      : request.type === 'statistics'
-        ? recalculateStatistics(request)
-        : request.type === 'conversation-detail'
-          ? loadConversationDetail(request)
-          : request.type === 'conversation-outline'
-            ? loadConversationOutline(request)
-            : request.type === 'message-content'
-              ? loadMessageContents(request)
-              : request.type === 'conversation-repetitions'
-                ? loadConversationRepeatedPhrases(request)
-                : request.type === 'temporal-slice'
-                  ? loadTemporalSlice(request)
-                  : request.type === 'temporal-content'
-                    ? loadTemporalContent(request)
-                    : generateRecap(request)
-  )
-  void operation.catch((error: unknown) =>
-    worker.postMessage({
+  void handle(request).catch((error: unknown) =>
+    post({
       type: 'failure',
       requestId: request.requestId,
-      operation: request.type,
       message: error instanceof Error ? error.message : String(error),
-    } satisfies Failure)
+    })
   )
 })
-
-async function importExport(request: ImportRequest): Promise<void> {
-  const state = { chats: 0, skipped: 0, lastProgressAt: 0 }
-  const startedAt = performance.now()
-  retainedChats.length = 0
-  retainedChatsById.clear()
-  repeatedPhraseCache.clear()
-  temporalCache = undefined
-
-  if (request.source.kind === 'folder') await importFolder(request, request.source.files, state)
-  else await importZip(request, request.source.archive, state)
-
-  const statistics = statisticsFor(request)
-  worker.postMessage({
-    type: 'complete',
-    requestId: request.requestId,
-    ...statistics,
-    chats: state.chats,
-    skipped: state.skipped,
-    durationMs: Math.round(performance.now() - startedAt),
-    startDate: request.startDate,
-    sessionGapMinutes: request.sessionGapMinutes,
-  } satisfies Complete)
+function post(message: WorkerResponse) {
+  worker.postMessage(message)
+}
+async function handle(request: WorkerRequest): Promise<void> {
+  const requestId = request.requestId
+  switch (request.type) {
+    case 'import': {
+      const started = performance.now()
+      availablePeriods.clear()
+      retainedChats.length = 0
+      retainedChatsById.clear()
+      repeatedPhraseCache.clear()
+      temporalCache = undefined
+      const state: ImportState = { chats: 0, skipped: 0, lastProgressAt: 0, diagnostics: [], record: 0 }
+      if (request.source.kind === 'folder') await importFolder(request, request.source.files, state)
+      else await importZip(request, request.source.archive, state)
+      if (!retainedChats.length)
+        throw new Error(
+          `No supported conversations were imported. ${state.skipped} records were skipped. ${state.diagnostics[0]?.reason ?? 'Check that the export contains conversations JSON files.'}`
+        )
+      const all = collectAnalytics(retainedChats, { timeZone: request.scope.timeZone })
+      const dataset: Dataset = {
+        projects: [...new Set(retainedChats.map(chat => chat.projectName ?? ''))].sort(),
+        available: period(all.days[0]?.date, all.days.at(-1)?.date),
+        skipped: state.skipped,
+        diagnostics: state.diagnostics,
+        durationMs: Math.round(performance.now() - started),
+      }
+      availablePeriods.set(request.scope.timeZone, dataset.available)
+      const statistics = statisticsFor(request.scope)
+      dataset.durationMs = Math.round(performance.now() - started)
+      post({ type: 'import', requestId, dataset, ...statistics })
+      return
+    }
+    case 'statistics':
+      temporalCache = undefined
+      post({ type: request.type, requestId, ...statisticsFor(request.scope) })
+      return
+    case 'conversation-detail':
+      post({
+        type: request.type,
+        requestId,
+        detail: collectConversationDetail(chatsFor(request.id, request.scope), request.scope),
+      })
+      return
+    case 'conversation-outline':
+      post({
+        type: request.type,
+        requestId,
+        page: findConversationTurns(
+          chatsFor(request.id, request.scope),
+          request.scope,
+          request.offset,
+          50,
+          request.query
+        ),
+      })
+      return
+    case 'message-content':
+      post({
+        type: request.type,
+        requestId,
+        contents: getMessageContents(chatsFor(request.id, request.scope), request.scope, request.ids),
+      })
+      return
+    case 'conversation-repetitions': {
+      const key = JSON.stringify([request.id, request.scope])
+      const analysis =
+        repeatedPhraseCache.get(key) ?? collectRepeatedPhrases(chatsFor(request.id, request.scope), request.scope)
+      if (repeatedPhraseCache.size >= 10) repeatedPhraseCache.delete(repeatedPhraseCache.keys().next().value!)
+      repeatedPhraseCache.set(key, analysis)
+      post({ type: request.type, requestId, analysis })
+      return
+    }
+    case 'temporal-slice': {
+      const cacheKey = JSON.stringify([request.scope, request.filter])
+      if (temporalCache?.key !== cacheKey)
+        temporalCache = {
+          key: cacheKey,
+          slice: collectTemporalMessageSlice(scopedChats(request.scope), request.scope, request.filter),
+        }
+      const slice = temporalCache.slice
+      const filtered = request.conversationId
+        ? slice.messages.filter(message => message.conversationId === request.conversationId)
+        : slice.messages
+      const ordered = request.order === 'newest' ? filtered : [...filtered].reverse()
+      post({
+        type: request.type,
+        requestId,
+        page: {
+          cacheKey,
+          filter: slice.filter,
+          summary: slice.summary,
+          conversations: slice.conversations,
+          offset: request.offset,
+          total: ordered.length,
+          messages: ordered.slice(request.offset, request.offset + 50).map(({ body: _body, ...message }) => message),
+        },
+      })
+      return
+    }
+    case 'temporal-content': {
+      if (temporalCache?.key !== request.cacheKey)
+        throw new Error('This time slice is no longer available. Return to Time and rhythm and select it again.')
+      const ids = new Set(request.ids)
+      post({
+        type: request.type,
+        requestId,
+        contents: temporalCache.slice.messages
+          .filter(message => ids.has(message.id))
+          .map(message => ({ id: message.id, body: message.body })),
+      })
+      return
+    }
+    case 'recap': {
+      const document = buildRecap(scopedChats(request.settings), {
+        ...request.settings,
+        context: { strategy: request.settings.contextStrategy, maxMessages: request.settings.contextMessages },
+      })
+      const content =
+        request.settings.contextFormat === 'yaml' ? serializeRecapYaml(document) : serializeRecapToon(document)
+      post({
+        type: request.type,
+        requestId,
+        contextFormat: request.settings.contextFormat,
+        context: new Blob([content], { type: request.settings.contextFormat === 'yaml' ? 'text/yaml' : 'text/plain' }),
+      })
+      return
+    }
+  }
+}
+function scopedChats(scope: AnalysisScope): Chat[] {
+  return scope.projectId === undefined
+    ? retainedChats
+    : retainedChats.filter(chat => (chat.projectName ?? '') === scope.projectId)
+}
+function chatsFor(id: string, scope: AnalysisScope): Chat[] {
+  return (retainedChatsById.get(id) ?? []).filter(
+    chat => scope.projectId === undefined || (chat.projectName ?? '') === scope.projectId
+  )
+}
+function statisticsFor(scope: AnalysisScope): StatisticsResult {
+  if (!availablePeriods.has(scope.timeZone)) {
+    const history = collectAnalytics(retainedChats, { timeZone: scope.timeZone })
+    availablePeriods.set(scope.timeZone, period(history.days[0]?.date, history.days.at(-1)?.date))
+  }
+  const available = availablePeriods.get(scope.timeZone)
+  const calendarRange = period(scope.startDate ?? available?.startDate, scope.endDate ?? available?.endDate)
+  const chats = scopedChats(scope)
+  const stats = collectAnalytics(chats, { ...scope, calendarRange })
+  const current = period(stats.days[0]?.date, stats.days.at(-1)?.date)
+  if (!current) return { stats, available, comparisonCovered: false }
+  const previous = previousPeriod(current)
+  return {
+    stats,
+    available,
+    period: current,
+    previousPeriod: previous,
+    previous: collectAnalytics(chats, { ...scope, ...previous }),
+    comparisonCovered: !!available && available.startDate <= previous.startDate && current.endDate <= available.endDate,
+  }
 }
 
-async function importFolder(request: ImportRequest, folderFiles: File[], state: ImportState): Promise<void> {
+async function importFolder(
+  request: Extract<WorkerRequest, { type: 'import' }>,
+  folderFiles: File[],
+  state: ImportState
+): Promise<void> {
   const files = folderFiles
     .filter(file => isConversationFile(file.name))
     .sort((a, b) => relativeName(a).localeCompare(relativeName(b)))
@@ -263,7 +238,11 @@ async function importFolder(request: ImportRequest, folderFiles: File[], state: 
   }
 }
 
-async function importZip(request: ImportRequest, archive: File, state: ImportState): Promise<void> {
+async function importZip(
+  request: Extract<WorkerRequest, { type: 'import' }>,
+  archive: File,
+  state: ImportState
+): Promise<void> {
   let entries = 0
   let extractedBytes = 0
   let failure: Error | undefined
@@ -335,19 +314,26 @@ async function importZip(request: ImportRequest, archive: File, state: ImportSta
   if (entries === 0) throw new Error(`No conversations*.json files were found in ZIP archive ${archive.name}.`)
 }
 
-type ImportState = { chats: number; skipped: number; lastProgressAt: number }
+type ImportState = {
+  chats: number
+  skipped: number
+  lastProgressAt: number
+  diagnostics: ImportDiagnostic[]
+  record: number
+}
 type ProgressFile = { fileIndex: number; fileCount?: number; archiveName?: string }
 
 function createConversationParser(
   name: string,
   bytesTotal: number | undefined,
-  request: ImportRequest,
+  request: Extract<WorkerRequest, { type: 'import' }>,
   state: ImportState,
   progressFile: ProgressFile
 ) {
   const parser = new JSONParser({ paths: ['$.*'], keepStack: false })
   let bytesRead = 0
   parser.onValue = ({ value }) => {
+    state.record++
     if (isEmptyV1Record(value)) return
     try {
       const chat = normalizeV1Chat(value)
@@ -356,8 +342,14 @@ function createConversationParser(
       records.push(chat)
       retainedChatsById.set(chat.id, records)
       state.chats++
-    } catch {
+    } catch (error) {
       state.skipped++
+      if (state.diagnostics.length < 10)
+        state.diagnostics.push({
+          file: name,
+          record: state.record,
+          reason: (error instanceof Error ? error.message : String(error)).replaceAll(/\s+/g, ' ').slice(0, 600),
+        })
     }
   }
   return {
@@ -372,12 +364,7 @@ function createConversationParser(
         worker.postMessage({
           type: 'progress',
           requestId: request.requestId,
-          fileName: name,
-          bytesRead,
-          bytesTotal,
-          chats: state.chats,
-          skipped: state.skipped,
-          ...progressFile,
+          detail: `${progressFile.archiveName ?? ''} ${progressFile.fileIndex}: ${name}: ${formatBytes(bytesRead)}${bytesTotal === undefined ? '' : ` / ${formatBytes(bytesTotal)}`} - ${state.chats} conversations`,
         } satisfies Progress)
       }
     },
@@ -387,171 +374,6 @@ function createConversationParser(
   }
 }
 
-function recalculateStatistics(request: StatisticsRequest): void {
-  temporalCache = undefined
-  worker.postMessage({
-    type: 'statistics',
-    requestId: request.requestId,
-    ...statisticsFor(request),
-    startDate: request.startDate,
-    sessionGapMinutes: request.sessionGapMinutes,
-  } satisfies Statistics)
-}
-
-function generateRecap(request: RecapRequest): void {
-  const document = buildRecap(retainedChats, {
-    projectNames: request.projectNames,
-    timeZone: request.timeZone,
-    startDate: request.startDate,
-    endDate: request.endDate,
-    sessionGapMinutes: request.sessionGapMinutes,
-    context: { strategy: request.contextStrategy, maxMessages: request.contextMessages },
-  })
-  const content = request.contextFormat === 'yaml' ? serializeRecapYaml(document) : serializeRecapToon(document)
-  worker.postMessage({
-    type: 'recap',
-    requestId: request.requestId,
-    context: new Blob([content], { type: request.contextFormat === 'yaml' ? 'text/yaml' : 'text/plain' }),
-    contextFormat: request.contextFormat,
-    prompt: createRecapPrompt(request.contextFormat),
-  } satisfies Recap)
-}
-
-function loadConversationDetail(request: DetailRequest): void {
-  const chats = chatsFor(request.id)
-  const detail = collectConversationDetail(
-    chats,
-    analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes)
-  )
-  worker.postMessage({
-    type: 'conversation-detail',
-    requestId: request.requestId,
-    id: request.id,
-    detail,
-  } satisfies Detail)
-}
-
-function loadConversationOutline(request: OutlineRequest): void {
-  const page = findConversationTurns(
-    chatsFor(request.id),
-    analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes),
-    request.offset,
-    request.limit,
-    request.query
-  )
-  worker.postMessage({
-    type: 'conversation-outline',
-    requestId: request.requestId,
-    id: request.id,
-    page,
-  } satisfies Outline)
-}
-
-function loadMessageContents(request: ContentRequest): void {
-  const contents = getMessageContents(
-    chatsFor(request.id),
-    analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes),
-    request.ids
-  )
-  worker.postMessage({
-    type: 'message-content',
-    requestId: request.requestId,
-    id: request.id,
-    contents,
-  } satisfies Content)
-}
-
-function loadConversationRepeatedPhrases(request: ConversationRepetitionsRequest): void {
-  const key = `${request.id}\u0000${repetitionKey(request.timeZone, request.startDate)}`
-  const analysis =
-    repeatedPhraseCache.get(key) ??
-    collectRepeatedPhrases(chatsFor(request.id), { timeZone: request.timeZone, startDate: request.startDate })
-  repeatedPhraseCache.set(key, analysis)
-  worker.postMessage({
-    type: 'conversation-repetitions',
-    requestId: request.requestId,
-    id: request.id,
-    analysis,
-  } satisfies ConversationRepetitions)
-}
-
-function loadTemporalSlice(request: TemporalSliceRequest): void {
-  if (!Number.isInteger(request.offset) || request.offset < 0)
-    throw new RangeError('offset must be a non-negative integer.')
-  if (!Number.isInteger(request.limit) || request.limit < 1 || request.limit > 100)
-    throw new RangeError('limit must be an integer between 1 and 100.')
-  const cacheKey = temporalKey(request.timeZone, request.startDate, request.filter)
-  if (temporalCache?.key !== cacheKey) {
-    temporalCache = {
-      key: cacheKey,
-      slice: collectTemporalMessageSlice(
-        retainedChats,
-        { timeZone: request.timeZone, startDate: request.startDate },
-        request.filter
-      ),
-    }
-  }
-  const slice = temporalCache.slice
-  const filtered = request.conversationId
-    ? slice.messages.filter(message => message.conversationId === request.conversationId)
-    : slice.messages
-  const ordered = request.order === 'newest' ? filtered : [...filtered].reverse()
-  worker.postMessage({
-    type: 'temporal-slice',
-    requestId: request.requestId,
-    cacheKey,
-    filter: slice.filter,
-    summary: slice.summary,
-    conversations: slice.conversations,
-    offset: request.offset,
-    total: ordered.length,
-    messages: ordered.slice(request.offset, request.offset + request.limit).map(temporalPreview),
-  } satisfies TemporalSlicePage)
-}
-
-function loadTemporalContent(request: TemporalContentRequest): void {
-  if (temporalCache?.key !== request.cacheKey) throw new Error('The selected time slice is no longer available.')
-  const wanted = new Set(request.ids)
-  const contents = temporalCache.slice.messages
-    .filter(message => wanted.has(message.id))
-    .map(message => ({ id: message.id, body: message.body }))
-  worker.postMessage({ type: 'temporal-content', requestId: request.requestId, contents } satisfies TemporalContent)
-}
-
-function statisticsFor(request: SharedOptions): { local: AnalyticsStatistics; utc: AnalyticsStatistics } {
-  return {
-    local: collectAnalytics(
-      retainedChats,
-      analyticsOptions(request.localTimeZone, request.startDate, request.sessionGapMinutes)
-    ),
-    utc: collectAnalytics(retainedChats, analyticsOptions('UTC', request.startDate, request.sessionGapMinutes)),
-  }
-}
-function analyticsOptions(timeZone: string, startDate: string | undefined, sessionGapMinutes: number) {
-  return { timeZone, startDate, sessionGapMinutes }
-}
-function repetitionKey(timeZone: string, startDate: string | undefined): string {
-  return `${timeZone}\u0000${startDate ?? ''}`
-}
-function temporalKey(timeZone: string, startDate: string | undefined, filter: TemporalMessageFilter): string {
-  return `${timeZone}\u0000${startDate ?? ''}\u0000${filter.role}\u0000${filter.weekday ?? 'all'}\u0000${filter.hour}`
-}
-function temporalPreview(message: TemporalMessageEvidence): TemporalMessagePreview {
-  return {
-    id: message.id,
-    conversationId: message.conversationId,
-    conversationTitle: message.conversationTitle,
-    role: message.role,
-    createTime: message.createTime,
-    text: message.text,
-    preview: message.preview,
-  }
-}
-function chatsFor(id: string): Chat[] {
-  const chats = retainedChatsById.get(id)
-  if (chats === undefined) throw new Error(`Conversation no longer exists in this browser session: ${id}`)
-  return chats
-}
 function relativeName(file: File): string {
   return file.webkitRelativePath || file.name
 }

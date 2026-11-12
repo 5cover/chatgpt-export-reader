@@ -38,10 +38,13 @@ export function HeatmapTable({
   minimumOpacity = 0.1,
   formatValue = value => value.toLocaleString(),
 }: HeatmapTableProps) {
-  const maximum = Math.max(1, ...rows.flatMap(row => row.cells.map(cell => cell?.value ?? 0)))
+  const maximum = rows.reduce(
+    (maximum, row) => row.cells.reduce((max, cell) => Math.max(max, cell?.value ?? 0), maximum),
+    1
+  )
 
   return (
-    <div class="heatmap-table-wrap">
+    <div class="heatmap-table-wrap" role="region" aria-label={`${label}, scrollable table`} tabIndex={0}>
       <table class="heatmap-table" aria-label={label}>
         <thead>
           <tr>
@@ -66,8 +69,8 @@ export function HeatmapTable({
                 const opacity = heatmapOpacity(cell.value, maximum, minimumOpacity)
                 const style: HeatmapCellStyle = {
                   '--heatmap-color': color,
-                  '--heatmap-opacity': opacity,
-                  '--heatmap-foreground': opacity >= 0.58 ? '#fff' : '#1d2a2c',
+                  '--heatmap-opacity': opacity * 0.25,
+                  '--heatmap-foreground': '#1d2a2c',
                 }
                 const value = formatValue(cell.value)
                 return (

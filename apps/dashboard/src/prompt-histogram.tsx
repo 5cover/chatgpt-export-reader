@@ -7,7 +7,7 @@ export function PromptHistogram({ bins }: { bins: readonly PromptDistributionBin
     <section class="chart-card">
       <div class="chart-heading">
         <div>
-          <h2>How many prompts do you send on a day?</h2>
+          <h3>How many prompts do you send on a day?</h3>
         </div>
       </div>
       <ul class="histogram" aria-label="Number of calendar days by user prompt count">

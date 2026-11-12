@@ -1,77 +1,206 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useMemo, useState } from 'preact/hooks'
 import type { AnalyticsStatistics } from '@chatgpt-export-reader/core'
-import { TimingChart } from './timing-chart.js'
-
-const storageKey = 'chatgpt-export-reader/project-names/v1'
-type Names = Record<string, string>
-export function ProjectLabel({ id, name }: { id: string; name?: string }) { return <span class="project-label">{name || id || 'Unassigned'}</span> }
-function ProjectName({ id, name, onSave }: { id: string; name?: string; onSave: (name: string) => void }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(name ?? '')
-  const input = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (editing) input.current?.focus() }, [editing])
-  const finish = (save: boolean) => { if (save) onSave(draft.trim()); setEditing(false) }
-  if (!editing) return <span class="editable-project" role="button" tabIndex={0} title="Click to rename" aria-label={`Rename project ${name || id}`} onClick={() => { setDraft(name ?? ''); setEditing(true) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setDraft(name ?? ''); setEditing(true) } }}><ProjectLabel id={id} name={name} /></span>
-  return <input ref={input} aria-label={`Name for project ${id}`} value={draft} onInput={event => setDraft(event.currentTarget.value)} onBlur={() => finish(true)} onKeyDown={event => { if (event.key === 'Enter') finish(true); if (event.key === 'Escape') finish(false) }} />
-}
-export function readProjectNames(): Names {
-  try {
-    const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '{}')
-    return validNames(value)
-  } catch { return {} }
-}
-function validNames(value: unknown): Names {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a project-name object.')
-  const result: Names = {}
-  for (const [id, name] of Object.entries(value)) {
-    if (!id || typeof name !== 'string' || name.length > 200) throw new Error('Invalid project ID or name.')
-    if (name.trim()) result[id] = name.trim()
-  }
-  return result
-}
-export function Projects({ stats }: { stats: AnalyticsStatistics }) {
-  const timing = stats.timing
-  const [names, setNames] = useState(readProjectNames)
-  const [error, setError] = useState<string>()
-  const [selectedId, setSelectedId] = useState<string>()
+import { ProjectLink, ProjectNameEditor, projectNamesKey, useProjectNames, validNames } from './project-identity.js'
+import { SortableTable, type SortableColumn } from './sortable-table.js'
+import { Choice, FileButton, TextValue } from './ui.js'
+import { formatDuration, formatShare } from './format.js'
+import { DailySeriesChart } from './daily-series-chart.js'
+import { dailyValues, measures, type Measure } from './metric-definitions.js'
+import { ConversationTable } from './conversation-table.js'
+export function Projects({
+  stats,
+  previous,
+  id,
+}: {
+  stats: AnalyticsStatistics
+  previous?: AnalyticsStatistics
+  id?: string
+}) {
+  const { names, warning, save } = useProjectNames()
+  const [error, setError] = useState('')
   const [onlyUnnamed, setOnlyUnnamed] = useState(false)
-  const save = (next: Names) => { localStorage.setItem(storageKey, JSON.stringify(next)); setNames(next) }
+  const [query, setQuery] = useState('')
+  const [measure, setMeasure] = useState<Measure>('usageMs')
+  const times = useMemo(() => new Map(stats.timing.projects.map(project => [project.id, project])), [stats])
+  const oldTimes = useMemo(() => new Map(previous?.timing.projects.map(project => [project.id, project])), [previous])
+  const rows = stats.projects.filter(
+    project =>
+      (!onlyUnnamed || (project.id && !names[project.id])) &&
+      `${names[project.id] ?? ''} ${project.id}`.toLowerCase().includes(query.toLowerCase())
+  )
+  const columns: SortableColumn<(typeof rows)[number]>[] = [
+    {
+      id: 'name',
+      label: 'Project',
+      align: 'left',
+      compare: (a, b) => (names[a.id] || a.id).localeCompare(names[b.id] || b.id),
+      render: project => <ProjectLink id={project.id} />,
+    },
+    {
+      id: 'time',
+      label: 'Estimated interaction time',
+      compare: (a, b) => (times.get(a.id)?.usageMs ?? 0) - (times.get(b.id)?.usageMs ?? 0),
+      render: project => formatDuration(times.get(project.id)?.usageMs ?? 0),
+    },
+    {
+      id: 'share',
+      label: 'Time share: current / previous',
+      compare: (a, b) => (times.get(a.id)?.usageMs ?? 0) - (times.get(b.id)?.usageMs ?? 0),
+      render: project =>
+        `${formatShare((times.get(project.id)?.usageMs ?? 0) / (stats.timing.summary.usageMs || 1))} / ${previous?.timing.summary.usageMs ? formatShare((oldTimes.get(project.id)?.usageMs ?? 0) / previous.timing.summary.usageMs) : 'Not available'}`,
+    },
+    {
+      id: 'prompts',
+      label: 'Prompts',
+      compare: (a, b) => a.prompts - b.prompts,
+      render: project => project.prompts.toLocaleString(),
+    },
+    {
+      id: 'chats',
+      label: 'Conversations',
+      compare: (a, b) => a.chats - b.chats,
+      render: project => project.chats.toLocaleString(),
+    },
+    {
+      id: 'input',
+      label: 'Input',
+      optional: true,
+      compare: (a, b) => a.input.words - b.input.words,
+      render: project => <TextValue {...project.input} />,
+    },
+    {
+      id: 'output',
+      label: 'Output',
+      optional: true,
+      compare: (a, b) => a.output.words - b.output.words,
+      render: project => <TextValue {...project.output} />,
+    },
+    {
+      id: 'delay',
+      label: 'Total first-reply delay',
+      optional: true,
+      compare: (a, b) => (times.get(a.id)?.thinkingMs ?? 0) - (times.get(b.id)?.thinkingMs ?? 0),
+      render: project => formatDuration(times.get(project.id)?.thinkingMs ?? 0),
+    },
+  ]
+  const project = stats.projects.find(project => project.id === id)
   const exportNames = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ schema: storageKey, names }, null, 2)], { type: 'application/json' }))
-    const link = document.createElement('a'); link.href = url; link.download = 'project-names.json'; link.click()
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify({ schema: projectNamesKey, names }, null, 2)], { type: 'application/json' })
+    )
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'project-names.json'
+    link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  const importNames = async (file?: File) => {
-    if (!file) return
+  const importNames = async (file: File) => {
     try {
-      if (file.size > 1_000_000) throw new Error('Mapping file is too large.')
+      if (file.size > 1_000_000) throw new Error('The mapping file must be smaller than 1 MB.')
       const value: unknown = JSON.parse(await file.text())
-      if (!value || typeof value !== 'object' || (value as { schema?: unknown }).schema !== storageKey) throw new Error('Unsupported mapping format.')
-      save({ ...names, ...validNames((value as { names: unknown }).names) })
-      setError(undefined)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('schema' in value) ||
+        value.schema !== projectNamesKey ||
+        !('names' in value)
+      )
+        throw new Error('Unsupported project-name mapping.')
+      save({ ...names, ...validNames(value.names) })
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+    }
   }
-  return <section class="chart-card">
-    <h2>Projects</h2>
-    <p class="chart-note">Rename project IDs inline. Names stay in this browser; export a mapping to use them elsewhere. Unassigned chats cannot be renamed.</p>
-    <div class="project-actions"><button class="ui-button" type="button" onClick={exportNames}>Export names</button><label class="ui-button">Import names<input class="import-input" type="file" accept="application/json,.json" onChange={event => void importNames(event.currentTarget.files?.[0])} /></label></div>
-    <label><input type="checkbox" checked={onlyUnnamed} onChange={event => setOnlyUnnamed(event.currentTarget.checked)} /> Show only unnamed projects ({stats.projects.filter(project => project.id && !names[project.id]).length})</label>
-    {error && <p role="alert">{error}</p>}
-    <div class="table-wrap"><table><thead><tr><th>Project</th><th>Chats</th><th>Prompts</th><th>Messages</th><th>Input words</th><th>Output words</th><th>Estimated use</th><th>Reply latency</th><th>Long waits</th><th>Details</th></tr></thead><tbody>
-      {stats.projects.filter(project => !onlyUnnamed || (project.id && !names[project.id])).map(project => { const time = timing.projects.find(value => value.id === project.id); return <tr key={project.id}><td>
-        {project.id ? <ProjectName id={project.id} name={names[project.id]} onSave={name => { const next = Object.fromEntries(Object.entries(names).filter(([id]) => id !== project.id)); if (name) next[project.id] = name; save(next) }} /> : 'Unassigned'}
-      </td><td>{project.chats}</td><td>{project.prompts}</td><td>{project.messages}</td><td>{project.input.words}</td><td>{project.output.words}</td><td>{Math.round((time?.usageMs ?? 0) / 60_000)} min</td><td>{Math.round((time?.thinkingMs ?? 0) / 60_000)} min</td><td>{time?.longWaits ?? 0}</td><td><button class="ui-button" type="button" onClick={() => setSelectedId(project.id)}>Details</button></td></tr> })}
-    </tbody></table></div>
-    {selectedId !== undefined && <section><h3>{names[selectedId] || selectedId || 'Unassigned'} by day</h3>
-      <TimingChart timing={{ ...timing, days: timing.projectDays.filter(day => day.projectId === selectedId).map(day => ({ ...day, id: day.date })) }} calendarDays={stats.days.map(day => day.date)} />
-      <table><thead><tr><th>Day</th><th>Estimated use</th><th>Reply latency</th></tr></thead><tbody>
-        {timing.projectDays.filter(day => day.projectId === selectedId).sort((a, b) => a.date.localeCompare(b.date)).map(day => <tr key={day.id}><td>{day.date}</td><td>{Math.round(day.usageMs / 60_000)} min</td><td>{Math.round(day.thinkingMs / 60_000)} min</td></tr>)}
-      </tbody></table>
-      <h3>Activity</h3><p>{stats.projects.find(project => project.id === selectedId)?.activeDays ?? 0} active days</p>
-      <table><thead><tr><th>Day</th><th>Prompts</th><th>Messages</th><th>Input words</th><th>Output words</th></tr></thead><tbody>
-        {stats.projects.find(project => project.id === selectedId)?.days.map(day => <tr key={day.date}><td>{day.date}</td><td>{day.prompts}</td><td>{day.messages}</td><td>{day.input.words}</td><td>{day.output.words}</td></tr>)}
-      </tbody></table>
-      <h3>Conversations</h3><ul>{timing.conversations.filter(chat => chat.projectId === selectedId).sort((a, b) => b.usageMs - a.usageMs).map(chat => <li key={chat.id}><a href={`#/conversations/${encodeURIComponent(chat.id)}`}>{chat.title}</a> - {Math.round(chat.usageMs / 60_000)} min</li>)}</ul>
-    </section>}
-  </section>
+  if (id !== undefined)
+    return (
+      <section>
+        <a href="#/projects">All projects</a>
+        <h3>
+          <ProjectNameEditor id={id} />
+        </h3>
+        {!project ? (
+          <p>No activity for this project in the current scope. Change the project filter or period above.</p>
+        ) : (
+          <>
+            <p>
+              {project.activeDays} active days and {project.chats} conversations in this scope.
+            </p>
+            <Choice
+              label="Project measure"
+              value={measure}
+              onChange={setMeasure}
+              options={(['usageMs', 'prompts', 'inputWords', 'outputWords', 'thinkingMs'] as const).map(value => ({
+                value,
+                label: measures[value].label,
+              }))}
+            />
+            <DailySeriesChart
+              title="Project activity over time"
+              days={dailyValues(
+                stats.days.map(day => ({
+                  ...day,
+                  prompts: project.days.find(p => p.date === day.date)?.prompts ?? 0,
+                  input: project.days.find(p => p.date === day.date)?.input ?? { words: 0, characters: 0 },
+                  output: project.days.find(p => p.date === day.date)?.output ?? { words: 0, characters: 0 },
+                })),
+                {
+                  ...stats.timing,
+                  days: stats.timing.projectDays
+                    .filter(day => day.projectId === id)
+                    .map(day => ({ ...day, id: day.date })),
+                },
+                measure
+              )}
+              measure={measure}
+            />
+            <h3>Contributing conversations</h3>
+            <ConversationTable
+              conversations={stats.conversations.filter(chat => (chat.projectId ?? '') === id)}
+              timing={stats.timing}
+            />
+          </>
+        )}
+      </section>
+    )
+  return (
+    <section>
+      <p>Compare thematic allocation. Project names stay in this browser; mapping files make them portable.</p>
+      <div class="project-actions">
+        <button class="ui-button" type="button" onClick={exportNames}>
+          Export names
+        </button>
+        <FileButton
+          label="Import names"
+          accept="application/json,.json"
+          onFiles={files => {
+            if (files[0]) void importNames(files[0])
+          }}
+        />
+      </div>
+      {warning && <p role="status">{warning}</p>}
+      {error && <p role="alert">{error}</p>}
+      <div class="filters">
+        <label>
+          Find project
+          <input type="search" value={query} onInput={event => setQuery(event.currentTarget.value)} />
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={onlyUnnamed}
+            onChange={event => setOnlyUnnamed(event.currentTarget.checked)}
+          />{' '}
+          Only unnamed projects
+        </label>
+      </div>
+      <SortableTable
+        label="Project allocation"
+        rows={rows}
+        columns={columns}
+        initialSort={{ column: 'time', direction: 'descending' }}
+        rowKey={project => project.id}
+      />
+    </section>
+  )
 }
