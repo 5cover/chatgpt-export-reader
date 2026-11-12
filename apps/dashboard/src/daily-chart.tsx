@@ -23,6 +23,7 @@ export function DailyChart({
   note = 'Click a day to inspect the conversations behind it. Drag to zoom; double-click to reset.',
 }: DailyChartProps) {
   const target = useRef<HTMLDivElement>(null)
+  const zoom = useRef<{ min: number; max: number }>()
   const onSelectDateRef = useRef(onSelectDate)
   onSelectDateRef.current = onSelectDate
 
@@ -77,9 +78,14 @@ export function DailyChart({
       ],
       target.current
     )
-
-    return () => chart.destroy()
-  }, [days])
+    if (zoom.current) chart.setScale('x', zoom.current)
+    return () => {
+      const min = chart.scales.x?.min
+      const max = chart.scales.x?.max
+      if (min != null && max != null) zoom.current = { min, max }
+      chart.destroy()
+    }
+  }, [days, metric])
 
   return (
     <section class="chart-card" aria-label="Daily ChatGPT message activity">

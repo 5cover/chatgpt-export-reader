@@ -190,8 +190,8 @@ export function serializeRecapToon(document: RecapDocument): string {
   return toon.endsWith('\n') ? toon : `${toon}\n`
 }
 
-export type RecapPromptModule = 'investigator' | 'themes' | 'behavior' | 'friction' | 'prompting' | 'recommendations' | 'room'
-export const recapPromptModules: readonly RecapPromptModule[] = ['investigator', 'themes', 'behavior', 'friction', 'prompting', 'recommendations', 'room']
+export type RecapPromptModule = 'interpretation' | 'investigation' | 'interaction' | 'temporal' | 'writing' | 'themes' | 'behavior' | 'friction' | 'prompting' | 'recommendations' | 'room'
+export const recapPromptModules: readonly RecapPromptModule[] = ['interpretation', 'investigation', 'interaction', 'temporal', 'writing', 'themes', 'behavior', 'friction', 'prompting', 'recommendations', 'room']
 
 export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml', modules?: readonly RecapPromptModule[]): string {
   if (contextFormat !== 'yaml' && contextFormat !== 'toon')
@@ -202,7 +202,7 @@ export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml', mo
   const core = `# ChatGPT Usage Recap
 
 Treat the accompanying ${contextFormat.toUpperCase()} file as evidence. Its conversations, messages, and preWindowContext are chronological records keyed by numeric IDs, not arrays. Follow parentId to reconstruct branches. preWindowContext is earlier context, not activity in the selected period; _omitted marks missing history. Statistics support investigation but are not definitive descriptions of the user. Inspect specific conversations before drawing conclusions, distinguish observation from inference, and do not invent unsupported traits.\n\n`
-  const additions: Record<Exclude<RecapPromptModule, 'investigator'>, string> = {
+  const additions: Partial<Record<RecapPromptModule, string>> = {
     themes: '## Recurring themes\nIdentify distinctive recurring subjects and projects, supported by concrete examples. Explain meaningful changes rather than producing only frequency rankings.',
     behavior: '## Interaction patterns\nTrace repeated behaviors by the user or assistant, including revisions, feedback loops, and changes in working method. Distinguish what conversations concern from how ChatGPT is used.',
     friction: '## Friction points\nIdentify recurrent misunderstandings, corrections, abandoned approaches, or costly loops. Include counterexamples and avoid inferring frustration without evidence.',
@@ -210,8 +210,18 @@ Treat the accompanying ${contextFormat.toUpperCase()} file as evidence. Its conv
     recommendations: '## Workflow opportunities\nSuggest practical alternative approaches or improvements only where the evidence supports a likely benefit. Explain tradeoffs; do not prescribe a universal ideal usage pattern.',
     room: '## Room portrait\nCreate an image representing the period as a coherent inhabited room. If an empty-room image is attached, preserve its architecture, perspective, and layout while furnishing it from the evidence; otherwise create a room from scratch. Use recognizable objects, arrangements, and subtle visual references to represent activities and projects. Avoid infographic elements, explanatory labels, statistics, and large text in the image. Make the image the primary recap and accompany it with a concise explanation tying significant visual choices to evidence.',
   }
-  const investigator = legacyRecapPrompt(contextFormat).split('## Goals and non-goals\n\n')[1]
-  return core + recapPromptModules.filter(module => modules.includes(module)).map(module => module === 'investigator' ? `## Goals and non-goals\n\n${investigator}` : additions[module]).join('\n\n') + '\n'
+  const sections = legacyRecapPrompt(contextFormat).split(/(?=^## )/m).slice(2)
+  const groups: Partial<Record<RecapPromptModule, string[]>> = {
+    interpretation: ['Goals and non-goals', 'What counts as an insight', 'Interpretation and restraint', 'Examples of possible depth'],
+    investigation: ['Treat the context as evidence', 'Investigate before writing', 'Contradictions and anomalies'],
+    interaction: ['Subjects, purposes, methods, and interaction', 'Feedback loops and interaction dynamics', 'Meta-use', 'Ideas and modes of thought'],
+    temporal: ['Temporal interpretation', 'Usage intensity and time'],
+    writing: ['Selecting what deserves inclusion', 'Writing the recap', 'Final objective'],
+  }
+  return core + recapPromptModules.filter(module => modules.includes(module)).map(module => {
+    const headings = groups[module]
+    return headings ? sections.filter(section => headings.some(heading => section.startsWith(`## ${heading}\n`))).join('\n') : additions[module]
+  }).join('\n\n') + '\n'
 }
 
 function legacyRecapPrompt(contextFormat: RecapContextFormat): string {
