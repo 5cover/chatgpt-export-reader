@@ -182,9 +182,30 @@ export function serializeRecapToon(document: RecapDocument): string {
   return toon.endsWith('\n') ? toon : `${toon}\n`
 }
 
-export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml'): string {
+export type RecapPromptModule = 'investigator' | 'themes' | 'behavior' | 'friction' | 'prompting' | 'recommendations' | 'room'
+export const recapPromptModules: readonly RecapPromptModule[] = ['investigator', 'themes', 'behavior', 'friction', 'prompting', 'recommendations', 'room']
+
+export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml', modules: readonly RecapPromptModule[] = ['investigator']): string {
   if (contextFormat !== 'yaml' && contextFormat !== 'toon')
     throw new RangeError(`unknown recap context format: ${contextFormat}`)
+  const unknown = modules.find(module => !recapPromptModules.includes(module))
+  if (unknown) throw new RangeError(`unknown recap module: ${unknown}`)
+  const core = `# ChatGPT Usage Recap
+
+Treat the accompanying ${contextFormat.toUpperCase()} file as evidence. Its conversations, messages, and preWindowContext are chronological records keyed by numeric IDs, not arrays. Follow parentId to reconstruct branches. preWindowContext is earlier context, not activity in the selected period; _omitted marks missing history. Statistics support investigation but are not definitive descriptions of the user. Inspect specific conversations before drawing conclusions, distinguish observation from inference, and do not invent unsupported traits.\n\n`
+  const additions: Record<Exclude<RecapPromptModule, 'investigator'>, string> = {
+    themes: '## Recurring themes\nIdentify distinctive recurring subjects and projects, supported by concrete examples. Explain meaningful changes rather than producing only frequency rankings.',
+    behavior: '## Interaction patterns\nTrace repeated behaviors by the user or assistant, including revisions, feedback loops, and changes in working method. Distinguish what conversations concern from how ChatGPT is used.',
+    friction: '## Friction points\nIdentify recurrent misunderstandings, corrections, abandoned approaches, or costly loops. Include counterexamples and avoid inferring frustration without evidence.',
+    prompting: '## Prompting style\nAnalyze languages, recurring formats, constraints, instruction patterns, and how prompting changes across the period. Ground claims in actual prompts.',
+    recommendations: '## Workflow opportunities\nSuggest practical alternative approaches or improvements only where the evidence supports a likely benefit. Explain tradeoffs; do not prescribe a universal ideal usage pattern.',
+    room: '## Room portrait\nCreate an image representing the period as a coherent inhabited room. If an empty-room image is attached, preserve its architecture, perspective, and layout while furnishing it from the evidence; otherwise create a room from scratch. Use recognizable objects, arrangements, and subtle visual references to represent activities and projects. Avoid infographic elements, explanatory labels, statistics, and large text in the image. Make the image the primary recap and accompany it with a concise explanation tying significant visual choices to evidence.',
+  }
+  const investigator = legacyRecapPrompt(contextFormat).split('## Goals and non-goals\n\n')[1]
+  return core + recapPromptModules.filter(module => modules.includes(module)).map(module => module === 'investigator' ? `## Goals and non-goals\n\n${investigator}` : additions[module]).join('\n\n') + '\n'
+}
+
+function legacyRecapPrompt(contextFormat: RecapContextFormat): string {
   return `# ChatGPT Usage Recap: Investigator Prompt
 
 - Treat the accompanying ${contextFormat.toUpperCase()} document as evidence.

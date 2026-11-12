@@ -52,6 +52,8 @@ export {
 export {
   buildRecap,
   createRecapPrompt,
+  recapPromptModules,
+  type RecapPromptModule,
   serializeRecapToon,
   serializeRecapYaml,
   type RecapContextFormat,
