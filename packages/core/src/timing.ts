@@ -1,11 +1,12 @@
 import type { Chat, Message } from './types.js'
 
 export type TimingTotals = { usageMs: number; thinkingMs: number; longWaitMs: number; longWaits: number; unmatchedPrompts: number }
-export type TimingBreakdown = TimingTotals & { id: string; title: string }
+export type TimingBreakdown = TimingTotals & { id: string; title: string; projectId?: string }
 export type TimingStatistics = {
   summary: TimingTotals
   days: Array<TimingBreakdown>
   projects: Array<TimingBreakdown>
+  projectDays: Array<TimingBreakdown & { projectId: string; date: string }>
   conversations: Array<TimingBreakdown>
 }
 
@@ -22,6 +23,7 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
   }
   const days = new Map<string, TimingBreakdown>()
   const projects = new Map<string, TimingBreakdown>()
+  const projectDays = new Map<string, TimingBreakdown & { projectId: string; date: string }>()
   const conversations = new Map<string, TimingBreakdown>()
   const spans: Span[] = []
   const get = (map: Map<string, TimingBreakdown>, id: string, title = id) => {
@@ -54,7 +56,13 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
           if (child.role === 'assistant' && valid(child.createTime) && child.createTime >= at && (!reply || child.createTime < reply.createTime!)) reply = child
           queue.push(...child.children)
         }
-        const targets = [get(days, dayKey(at)), get(projects, project, project || 'Unassigned'), get(conversations, chat.id, chat.title)]
+        const conversation = get(conversations, chat.id, chat.title)
+        conversation.projectId = project
+        const targets = [get(days, dayKey(at)), get(projects, project, project || 'Unassigned'), conversation]
+        const pdKey = `${project}\u0000${dayKey(at)}`
+        let pd = projectDays.get(pdKey)
+        if (!pd) { pd = { id: pdKey, title: project || 'Unassigned', projectId: project, date: dayKey(at), ...empty() }; projectDays.set(pdKey, pd) }
+        targets.push(pd)
         if (!reply) targets.forEach(target => target.unmatchedPrompts++)
         else {
           const duration = reply.createTime! - at
@@ -104,11 +112,17 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
       const duration = end - start
       get(days, date).usageMs += duration
       get(projects, span.project, span.project || 'Unassigned').usageMs += duration
-      get(conversations, span.chat).usageMs += duration
+      const pdKey = `${span.project}\u0000${date}`
+      let pd = projectDays.get(pdKey)
+      if (!pd) { pd = { id: pdKey, title: span.project || 'Unassigned', projectId: span.project, date, ...empty() }; projectDays.set(pdKey, pd) }
+      pd.usageMs += duration
+      const conversation = get(conversations, span.chat)
+      conversation.projectId = span.project
+      conversation.usageMs += duration
       start = end
     }
   }
   const summary = empty()
   for (const day of days.values()) for (const key of Object.keys(summary) as Array<keyof TimingTotals>) summary[key] += day[key]
-  return { summary, days: [...days.values()].sort((a, b) => a.id.localeCompare(b.id)), projects: [...projects.values()].sort((a, b) => b.usageMs - a.usageMs), conversations: [...conversations.values()] }
+  return { summary, days: [...days.values()].sort((a, b) => a.id.localeCompare(b.id)), projects: [...projects.values()].sort((a, b) => b.usageMs - a.usageMs), projectDays: [...projectDays.values()], conversations: [...conversations.values()] }
 }

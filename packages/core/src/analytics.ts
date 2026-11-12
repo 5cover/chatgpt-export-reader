@@ -390,7 +390,7 @@ export function collectRepeatedPhrases(
   };
 }
 
-function aggregate(events: Event[], context: Context): AnalyticsStatistics {
+function aggregate(events: Event[], context: Context): Omit<AnalyticsStatistics, 'timing'> {
   const summary: AnalyticsSummary = {
     chats: 0,
     messages: 0,
@@ -497,7 +497,6 @@ function aggregate(events: Event[], context: Context): AnalyticsStatistics {
           a.title.localeCompare(b.title),
       ),
     sessions,
-    timing: { summary: { usageMs: 0, thinkingMs: 0, longWaitMs: 0, longWaits: 0, unmatchedPrompts: 0 }, days: [], projects: [], conversations: [] },
   };
 }
 

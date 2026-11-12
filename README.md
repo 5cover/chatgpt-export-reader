@@ -56,6 +56,8 @@ pnpm --filter @chatgpt-export-reader/dashboard preview
 
 It provides local text-volume analytics, daily and temporal-rhythm views, configurable observed sessions, concentration rankings, a paginated conversation evidence explorer with literal search and on-demand message text, and a recap page that generates a downloadable YAML or TOON evidence file plus an example prompt. The static dashboard deploys to GitHub Pages on pushes to `main`.
 
+The dashboard also estimates daily interaction time from message lengths (40 words/minute typing, 200 words/minute reading, 3 seconds to 15 minutes per message). Reply-to-next-prompt gaps constrain the estimate; waiting for the first reply is excluded. Reply latency pairs each prompt with its first assistant descendant before another user turn. The headline latency excludes waits over 30 minutes and reports them separately. Neither metric measures actual screen time or model computation. The Projects page groups chats by exported project ID, allows inline names stored in this browser, and imports or exports those names as JSON. Recap prompt modules can be switched on and off in the preview.
+
 ## Step 3
 
 - Max label size configurable (default 50)

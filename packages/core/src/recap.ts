@@ -15,6 +15,7 @@ export type RecapContextStrategy = 'full' | 'rolling-window'
 export type RecapContextFormat = 'yaml' | 'toon'
 
 export type RecapOptions = AnalyticsOptions & {
+  projectNames?: Readonly<Record<string, string>>
   context?: {
     strategy?: RecapContextStrategy
     maxMessages?: number
@@ -46,6 +47,8 @@ export type RecapOmission = {
 export type RecapConversationEvidence = {
   id: string
   title: string
+  projectId?: string
+  projectName?: string
   omittedUntimestampedMessages: number
   preWindowContext: Array<RecapMessage | RecapOmission>
   messages: RecapMessage[]
@@ -139,7 +142,7 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
     analytics: { ...analytics, repeatedPhrases },
     metrics: deriveAnalyticsMetrics(analytics, { timeZone }),
     conversations: source
-      .map(chat => evidenceFor(chat, resolvedStart, resolvedEnd, timeZone, strategy, maxMessages))
+      .map(chat => evidenceFor(chat, resolvedStart, resolvedEnd, timeZone, strategy, maxMessages, options.projectNames))
       .filter((conversation): conversation is RecapConversationEvidence => conversation !== undefined),
   }
 }
@@ -552,7 +555,8 @@ function evidenceFor(
   endDate: string,
   timeZone: string,
   strategy: RecapContextStrategy,
-  maxMessages: number
+  maxMessages: number,
+  projectNames?: Readonly<Record<string, string>>
 ): RecapConversationEvidence | undefined {
   const flat = flattenMessages(chat.messages)
   const dated = flat.filter(entry => entry.message.createTime !== undefined)
@@ -569,6 +573,8 @@ function evidenceFor(
   return {
     id: chat.id,
     title: chat.title,
+    projectId: chat.projectName,
+    projectName: chat.projectName ? projectNames?.[chat.projectName] ?? chat.projectName : undefined,
     omittedUntimestampedMessages: flat.length - dated.length,
     preWindowContext: context,
     messages: selected.map(entry => recapMessage(entry, timeZone)),
@@ -729,6 +735,7 @@ function compactEvidence(
   for (const conversation of conversations) {
     compacted.set(ids.id(conversation.id), {
       title: conversation.title,
+      ...(conversation.projectId ? { projectId: conversation.projectId, projectName: conversation.projectName } : {}),
       omittedUntimestampedMessages: conversation.omittedUntimestampedMessages,
       preWindowContext: compactContext(conversation.preWindowContext, ids),
       messages: compactMessages(conversation.messages, ids),

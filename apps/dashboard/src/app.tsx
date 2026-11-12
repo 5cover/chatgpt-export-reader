@@ -26,7 +26,7 @@ import { HeatmapTable, type HeatmapRow } from './heatmap-table.js'
 import { PromptHistogram } from './prompt-histogram.js'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
 import { TimingChart } from './timing-chart.js'
-import { Projects } from './projects.js'
+import { Projects, readProjectNames } from './projects.js'
 
 type ImportState =
   | { kind: 'idle' }
@@ -500,7 +500,7 @@ export function App() {
     const requestId = ++nextRequest.current
     activeRecap.current = requestId
     setRecap({ kind: 'generating' })
-    worker.current?.postMessage({ type: 'recap', requestId, ...settings })
+    worker.current?.postMessage({ type: 'recap', requestId, ...settings, projectNames: readProjectNames() })
   }
 
   return (

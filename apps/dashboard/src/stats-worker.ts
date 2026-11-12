@@ -93,6 +93,7 @@ type RecapRequest = {
   contextStrategy: RecapContextStrategy
   contextMessages: number
   contextFormat: RecapContextFormat
+  projectNames?: Record<string, string>
 }
 type Request =
   | ImportRequest
@@ -398,6 +399,7 @@ async function recalculateStatistics(request: StatisticsRequest): Promise<void> 
 
 async function generateRecap(request: RecapRequest): Promise<void> {
   const document = buildRecap(retainedChats, {
+    projectNames: request.projectNames,
     timeZone: request.timeZone,
     startDate: request.startDate,
     endDate: request.endDate,
