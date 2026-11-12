@@ -8,13 +8,13 @@ export type PromptDistributionBin = { from: number; to: number; days: number };
 
 export type OutputConcentration = {
   totalWords: number;
-  topConversationShares: Array<{ count: number; share: number }>;
-  conversations: Array<{
+  topConversationShares: { count: number; share: number }[];
+  conversations: {
     conversation: ConversationAnalytics;
     outputWords: number;
     share: number;
     cumulativeShare: number;
-  }>;
+  }[];
 };
 
 export type SessionDepthBin = { from: number; to: number | null; sessions: number };

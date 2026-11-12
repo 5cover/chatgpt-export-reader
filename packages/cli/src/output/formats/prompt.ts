@@ -41,7 +41,7 @@ export default class PromptOutput implements OutputFormat {
       );
       const directory = ensureDirectory(
         root,
-        mapfilter<string | Falsey, string | Falsey, string>(
+        mapfilter<string | Exclude<Falsey, "">, string | Exclude<Falsey, "">, string>(
           [chat.isArchived && "archived", chat.projectName],
           (segment) => segment && sanitize(segment),
           (segment): segment is string => !!segment,

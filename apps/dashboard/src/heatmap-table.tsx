@@ -1,4 +1,4 @@
-import type { JSX } from 'preact'
+import type { CSSProperties } from 'preact'
 
 export type HeatmapCell = {
   value: number
@@ -23,7 +23,7 @@ export type HeatmapTableProps = {
   formatValue?: (value: number) => string
 }
 
-type HeatmapCellStyle = JSX.CSSProperties & {
+type HeatmapCellStyle = CSSProperties & {
   '--heatmap-color': string
   '--heatmap-opacity': number
   '--heatmap-foreground': string

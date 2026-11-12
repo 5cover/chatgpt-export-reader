@@ -181,7 +181,7 @@ const MAX_ARCHIVE_EXTRACTED_BYTES = 1_000_000_000
 
 worker.addEventListener('message', (event: MessageEvent<Request>) => {
   const request = event.data
-  const operation =
+  const operation = Promise.resolve().then(() =>
     request.type === 'import'
       ? importExport(request)
       : request.type === 'statistics'
@@ -199,7 +199,8 @@ worker.addEventListener('message', (event: MessageEvent<Request>) => {
                   : request.type === 'temporal-content'
                     ? loadTemporalContent(request)
                     : generateRecap(request)
-  void operation.catch(error =>
+  )
+  void operation.catch((error: unknown) =>
     worker.postMessage({
       type: 'failure',
       requestId: request.requestId,
@@ -386,7 +387,7 @@ function createConversationParser(
   }
 }
 
-async function recalculateStatistics(request: StatisticsRequest): Promise<void> {
+function recalculateStatistics(request: StatisticsRequest): void {
   temporalCache = undefined
   worker.postMessage({
     type: 'statistics',
@@ -397,7 +398,7 @@ async function recalculateStatistics(request: StatisticsRequest): Promise<void> 
   } satisfies Statistics)
 }
 
-async function generateRecap(request: RecapRequest): Promise<void> {
+function generateRecap(request: RecapRequest): void {
   const document = buildRecap(retainedChats, {
     projectNames: request.projectNames,
     timeZone: request.timeZone,
@@ -416,7 +417,7 @@ async function generateRecap(request: RecapRequest): Promise<void> {
   } satisfies Recap)
 }
 
-async function loadConversationDetail(request: DetailRequest): Promise<void> {
+function loadConversationDetail(request: DetailRequest): void {
   const chats = chatsFor(request.id)
   const detail = collectConversationDetail(
     chats,
@@ -430,7 +431,7 @@ async function loadConversationDetail(request: DetailRequest): Promise<void> {
   } satisfies Detail)
 }
 
-async function loadConversationOutline(request: OutlineRequest): Promise<void> {
+function loadConversationOutline(request: OutlineRequest): void {
   const page = findConversationTurns(
     chatsFor(request.id),
     analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes),
@@ -446,7 +447,7 @@ async function loadConversationOutline(request: OutlineRequest): Promise<void> {
   } satisfies Outline)
 }
 
-async function loadMessageContents(request: ContentRequest): Promise<void> {
+function loadMessageContents(request: ContentRequest): void {
   const contents = getMessageContents(
     chatsFor(request.id),
     analyticsOptions(request.timeZone, request.startDate, request.sessionGapMinutes),
@@ -460,7 +461,7 @@ async function loadMessageContents(request: ContentRequest): Promise<void> {
   } satisfies Content)
 }
 
-async function loadConversationRepeatedPhrases(request: ConversationRepetitionsRequest): Promise<void> {
+function loadConversationRepeatedPhrases(request: ConversationRepetitionsRequest): void {
   const key = `${request.id}\u0000${repetitionKey(request.timeZone, request.startDate)}`
   const analysis =
     repeatedPhraseCache.get(key) ??
@@ -474,7 +475,7 @@ async function loadConversationRepeatedPhrases(request: ConversationRepetitionsR
   } satisfies ConversationRepetitions)
 }
 
-async function loadTemporalSlice(request: TemporalSliceRequest): Promise<void> {
+function loadTemporalSlice(request: TemporalSliceRequest): void {
   if (!Number.isInteger(request.offset) || request.offset < 0)
     throw new RangeError('offset must be a non-negative integer.')
   if (!Number.isInteger(request.limit) || request.limit < 1 || request.limit > 100)
@@ -508,7 +509,7 @@ async function loadTemporalSlice(request: TemporalSliceRequest): Promise<void> {
   } satisfies TemporalSlicePage)
 }
 
-async function loadTemporalContent(request: TemporalContentRequest): Promise<void> {
+function loadTemporalContent(request: TemporalContentRequest): void {
   if (temporalCache?.key !== request.cacheKey) throw new Error('The selected time slice is no longer available.')
   const wanted = new Set(request.ids)
   const contents = temporalCache.slice.messages

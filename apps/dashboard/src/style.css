@@ -1057,14 +1057,24 @@ td a,
   background: #fff;
   cursor: pointer;
 }
+.turn-trigger {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 .turn:hover {
   border-color: #1d5d59;
 }
-.turn > span,
-.turn > strong {
+.turn-trigger > span,
+.turn-trigger > strong {
   display: block;
 }
-.turn > span {
+.turn-trigger > span {
   margin-bottom: 5px;
   color: #6b7d80;
   font:
@@ -1072,7 +1082,7 @@ td a,
     system-ui,
     sans-serif;
 }
-.turn > strong {
+.turn-trigger > strong {
   font-size: 0.95rem;
   line-height: 1.4;
 }

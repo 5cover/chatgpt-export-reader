@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { AnalyticsStatistics } from '@chatgpt-export-reader/core'
 import { TimingChart } from './timing-chart.js'
 
@@ -8,9 +8,11 @@ export function ProjectLabel({ id, name }: { id: string; name?: string }) { retu
 function ProjectName({ id, name, onSave }: { id: string; name?: string; onSave: (name: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(name ?? '')
+  const input = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (editing) input.current?.focus() }, [editing])
   const finish = (save: boolean) => { if (save) onSave(draft.trim()); setEditing(false) }
   if (!editing) return <span class="editable-project" role="button" tabIndex={0} title="Click to rename" aria-label={`Rename project ${name || id}`} onClick={() => { setDraft(name ?? ''); setEditing(true) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setDraft(name ?? ''); setEditing(true) } }}><ProjectLabel id={id} name={name} /></span>
-  return <input autoFocus aria-label={`Name for project ${id}`} value={draft} onInput={event => setDraft(event.currentTarget.value)} onBlur={() => finish(true)} onKeyDown={event => { if (event.key === 'Enter') finish(true); if (event.key === 'Escape') finish(false) }} />
+  return <input ref={input} aria-label={`Name for project ${id}`} value={draft} onInput={event => setDraft(event.currentTarget.value)} onBlur={() => finish(true)} onKeyDown={event => { if (event.key === 'Enter') finish(true); if (event.key === 'Escape') finish(false) }} />
 }
 export function readProjectNames(): Names {
   try {
@@ -57,7 +59,7 @@ export function Projects({ stats }: { stats: AnalyticsStatistics }) {
     {error && <p role="alert">{error}</p>}
     <div class="table-wrap"><table><thead><tr><th>Project</th><th>Chats</th><th>Prompts</th><th>Messages</th><th>Input words</th><th>Output words</th><th>Estimated use</th><th>Reply latency</th><th>Long waits</th><th>Details</th></tr></thead><tbody>
       {stats.projects.filter(project => !onlyUnnamed || (project.id && !names[project.id])).map(project => { const time = timing.projects.find(value => value.id === project.id); return <tr key={project.id}><td>
-        {project.id ? <ProjectName id={project.id} name={names[project.id]} onSave={name => { const next = { ...names }; if (name) next[project.id] = name; else delete next[project.id]; save(next) }} /> : 'Unassigned'}
+        {project.id ? <ProjectName id={project.id} name={names[project.id]} onSave={name => { const next = Object.fromEntries(Object.entries(names).filter(([id]) => id !== project.id)); if (name) next[project.id] = name; save(next) }} /> : 'Unassigned'}
       </td><td>{project.chats}</td><td>{project.prompts}</td><td>{project.messages}</td><td>{project.input.words}</td><td>{project.output.words}</td><td>{Math.round((time?.usageMs ?? 0) / 60_000)} min</td><td>{Math.round((time?.thinkingMs ?? 0) / 60_000)} min</td><td>{time?.longWaits ?? 0}</td><td><button class="ui-button" type="button" onClick={() => setSelectedId(project.id)}>Details</button></td></tr> })}
     </tbody></table></div>
     {selectedId !== undefined && <section><h3>{names[selectedId] || selectedId || 'Unassigned'} by day</h3>

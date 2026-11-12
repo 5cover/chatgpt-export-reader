@@ -50,7 +50,7 @@ export type RecapConversationEvidence = {
   projectId?: string
   projectName?: string
   omittedUntimestampedMessages: number
-  preWindowContext: Array<RecapMessage | RecapOmission>
+  preWindowContext: (RecapMessage | RecapOmission)[]
   messages: RecapMessage[]
 }
 
@@ -103,7 +103,7 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
   if (resolvedStart > resolvedEnd) throw new RangeError('startDate must be on or before endDate.')
 
   const strategy = options.context?.strategy ?? 'rolling-window'
-  if (strategy !== 'full' && strategy !== 'rolling-window')
+  if (!['full', 'rolling-window'].includes(strategy))
     throw new RangeError('context.strategy must be "full" or "rolling-window".')
   const maxMessages = options.context?.maxMessages ?? 20
   if (!Number.isInteger(maxMessages) || maxMessages < 0)
@@ -194,7 +194,7 @@ export type RecapPromptModule = 'interpretation' | 'investigation' | 'interactio
 export const recapPromptModules: readonly RecapPromptModule[] = ['interpretation', 'investigation', 'interaction', 'temporal', 'writing', 'themes', 'behavior', 'friction', 'prompting', 'recommendations', 'room']
 
 export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml', modules?: readonly RecapPromptModule[]): string {
-  if (contextFormat !== 'yaml' && contextFormat !== 'toon')
+  if (!['yaml', 'toon'].includes(contextFormat))
     throw new RangeError(`unknown recap context format: ${contextFormat}`)
   if (modules === undefined) return legacyRecapPrompt(contextFormat)
   const unknown = modules.find(module => !recapPromptModules.includes(module))
@@ -597,7 +597,7 @@ function evidenceFor(
   }
 }
 
-function rollingWindow(messages: FlatMessage[], budget: number, timeZone: string): Array<RecapMessage | RecapOmission> {
+function rollingWindow(messages: FlatMessage[], budget: number, timeZone: string): (RecapMessage | RecapOmission)[] {
   if (messages.length <= budget) return messages.map(entry => recapMessage(entry, timeZone))
   const firstCount = Math.ceil(budget / 2)
   const lastCount = Math.floor(budget / 2)
@@ -668,7 +668,7 @@ function validateTimeZone(timeZone: string): void {
 }
 function dayKey(timestamp: number, timeZone: string): string {
   const values = parts(timestamp, timeZone)
-  return `${values.year}-${values.month}-${values.day}`
+  return `${values.year!}-${values.month!}-${values.day!}`
 }
 function formatLocalTimestamp(timestamp: number, timeZone: string): string {
   const value = parts(timestamp, timeZone)
@@ -683,7 +683,7 @@ function formatLocalTimestamp(timestamp: number, timeZone: string): string {
   const sign = offsetMinutes < 0 ? '-' : '+'
   const absolute = Math.abs(offsetMinutes)
   const offset = `${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`
-  return `${value.weekday!.toLocaleLowerCase()} ${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}${offset}`
+  return `${value.weekday!.toLocaleLowerCase()} ${value.year!}-${value.month!}-${value.day!}T${value.hour!}:${value.minute!}${offset}`
 }
 function parts(timestamp: number, timeZone: string): Record<string, string> {
   return Object.fromEntries(
@@ -761,7 +761,7 @@ function compactEvidence(
 }
 
 function compactContext(
-  context: Array<RecapMessage | RecapOmission>,
+  context: (RecapMessage | RecapOmission)[],
   ids: RecapIdGenerator
 ): Map<number | '_omitted', unknown> {
   const compacted = new Map<number | '_omitted', unknown>()

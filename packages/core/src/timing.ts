@@ -4,10 +4,10 @@ export type TimingTotals = { usageMs: number; thinkingMs: number; longWaitMs: nu
 export type TimingBreakdown = TimingTotals & { id: string; title: string; projectId?: string }
 export type TimingStatistics = {
   summary: TimingTotals
-  days: Array<TimingBreakdown>
-  projects: Array<TimingBreakdown>
-  projectDays: Array<TimingBreakdown & { projectId: string; date: string }>
-  conversations: Array<TimingBreakdown>
+  days: TimingBreakdown[]
+  projects: TimingBreakdown[]
+  projectDays: (TimingBreakdown & { projectId: string; date: string })[]
+  conversations: TimingBreakdown[]
 }
 
 type Span = { start: number; end: number; project: string; chat: string }
@@ -19,7 +19,7 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
   const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: options.timeZone ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' })
   const dayKey = (at: number) => {
     const parts = Object.fromEntries(formatter.formatToParts(at).map(part => [part.type, part.value]))
-    return `${parts.year}-${parts.month}-${parts.day}`
+    return `${parts.year!}-${parts.month!}-${parts.day!}`
   }
   const days = new Map<string, TimingBreakdown>()
   const projects = new Map<string, TimingBreakdown>()
@@ -134,7 +134,7 @@ export function collectTiming(chats: Iterable<Chat>, options: { timeZone?: strin
     }
   }
   const summary = empty()
-  for (const day of days.values()) for (const key of Object.keys(summary) as Array<keyof TimingTotals>) summary[key] += day[key]
+  for (const day of days.values()) for (const key of Object.keys(summary) as (keyof TimingTotals)[]) summary[key] += day[key]
   summary.invalidPrompts = invalidPrompts
   return { summary, days: [...days.values()].sort((a, b) => a.id.localeCompare(b.id)), projects: [...projects.values()].sort((a, b) => b.usageMs - a.usageMs), projectDays: [...projectDays.values()], conversations: [...conversations.values()] }
 }

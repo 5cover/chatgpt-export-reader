@@ -31,7 +31,7 @@ export default class MarkdownOutput implements OutputFormat {
       );
       const directory = ensureDirectory(
         root,
-        mapfilter<string | Falsey, string | Falsey, string>(
+        mapfilter<string | Exclude<Falsey, "">, string | Exclude<Falsey, "">, string>(
           [chat.isArchived && "archived", chat.projectName],
           (segment) => segment && sanitize(segment),
           (segment): segment is string => !!segment,
@@ -103,7 +103,7 @@ function toMarkdown(lin: LinearDocument): string {
       " @ ",
       m.message.createTime !== undefined && time(m.message.createTime),
       ` : w${m.message.weight}`,
-      typeof instructionNo == "number"
+      typeof instructionNo === "number"
         ? [
             " : instruction ",
             link(`#instruction-${instructionNo}`, instructionNo.toString()),

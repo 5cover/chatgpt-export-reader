@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact'
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type {
   AnalyticsDerivedMetrics,
   AnalyticsDay,
@@ -111,6 +111,8 @@ export function App() {
   const [detail, setDetail] = useState<DetailState>()
   const [outline, setOutline] = useState<TurnPage>()
   const [outlineQuery, setOutlineQuery] = useState('')
+  const outlineQueryRef = useRef(outlineQuery)
+  outlineQueryRef.current = outlineQuery
   const [contents, setContents] = useState<Record<string, string>>({})
   const [conversationRepetitions, setConversationRepetitions] = useState<RepetitionState>()
   const [temporal, setTemporal] = useState<TemporalState>()
@@ -134,11 +136,64 @@ export function App() {
   const stats = readyState === undefined ? undefined : zone === 'local' ? readyState.local : readyState.utc
   const visibleRoute: Route = stats ? route : { page: 'about' }
 
+  const loadOutline = useCallback((id: string, offset = 0, query = outlineQueryRef.current || undefined) => {
+    const requestId = ++nextRequest.current
+    activeOutline.current = requestId
+    worker.current?.postMessage({
+      type: 'conversation-outline',
+      requestId,
+      id,
+      timeZone: selectedTimeZone(zone),
+      startDate: appliedStartDate,
+      sessionGapMinutes: appliedGap,
+      offset,
+      limit: 50,
+      query,
+    })
+  }, [zone, appliedStartDate, appliedGap])
+
+  const loadConversationRepetitions = useCallback((id: string) => {
+    const requestId = ++nextRequest.current
+    activeConversationRepetitions.current = requestId
+    worker.current?.postMessage({
+      type: 'conversation-repetitions',
+      requestId,
+      id,
+      timeZone: selectedTimeZone(zone),
+      startDate: appliedStartDate,
+    })
+  }, [zone, appliedStartDate])
+
+  const loadTemporalSlice = useCallback((
+    filter: TemporalMessageFilter,
+    offset: number,
+    conversationId: string | undefined,
+    order: 'newest' | 'oldest'
+  ) => {
+    const requestId = ++nextRequest.current
+    activeTemporalSlice.current = requestId
+    setTemporal(current => (current?.kind === 'ready' ? { ...current, updating: true } : { kind: 'loading' }))
+    worker.current?.postMessage({
+      type: 'temporal-slice',
+      requestId,
+      timeZone: selectedTimeZone(zone),
+      startDate: appliedStartDate,
+      filter,
+      conversationId,
+      order,
+      offset,
+      limit: 50,
+    })
+  }, [zone, appliedStartDate])
+
+  const receiveRef = useRef(receive)
+  receiveRef.current = receive
+
   useEffect(() => {
     folderInput.current?.setAttribute('webkitdirectory', '')
     const nextWorker = new Worker(new URL('./stats-worker.ts', import.meta.url), { type: 'module' })
     worker.current = nextWorker
-    nextWorker.addEventListener('message', event => receive(event.data as WorkerMessage))
+    nextWorker.addEventListener('message', event => receiveRef.current(event.data as WorkerMessage))
     const onHashChange = () => setRoute(readRoute())
     addEventListener('hashchange', onHashChange)
     return () => {
@@ -181,7 +236,7 @@ export function App() {
     })
     loadOutline(route.id, 0, undefined)
     loadConversationRepetitions(route.id)
-  }, [route, stats, zone, appliedStartDate, appliedGap])
+  }, [route, stats, zone, appliedStartDate, appliedGap, loadOutline, loadConversationRepetitions])
 
   useEffect(() => {
     if (route.page !== 'time' || !stats) return
@@ -191,7 +246,7 @@ export function App() {
     setTemporalContents({})
     setTemporal({ kind: 'loading' })
     loadTemporalSlice(route.filter, 0, undefined, 'newest')
-  }, [route, stats, zone, appliedStartDate])
+  }, [route, stats, zone, appliedStartDate, loadTemporalSlice])
 
   function receive(message: WorkerMessage) {
     if (message.type === 'progress') {
@@ -388,22 +443,6 @@ export function App() {
     })
   }
 
-  function loadOutline(id: string, offset = 0, query = outlineQuery || undefined) {
-    const requestId = ++nextRequest.current
-    activeOutline.current = requestId
-    worker.current?.postMessage({
-      type: 'conversation-outline',
-      requestId,
-      id,
-      timeZone: selectedTimeZone(zone),
-      startDate: appliedStartDate,
-      sessionGapMinutes: appliedGap,
-      offset,
-      limit: 50,
-      query,
-    })
-  }
-
   function openContent(id: string) {
     if (contents[id] !== undefined || route.page !== 'conversation') return
     const requestId = ++nextRequest.current
@@ -416,40 +455,6 @@ export function App() {
       startDate: appliedStartDate,
       sessionGapMinutes: appliedGap,
       ids: [id],
-    })
-  }
-
-  function loadConversationRepetitions(id: string) {
-    const requestId = ++nextRequest.current
-    activeConversationRepetitions.current = requestId
-    worker.current?.postMessage({
-      type: 'conversation-repetitions',
-      requestId,
-      id,
-      timeZone: selectedTimeZone(zone),
-      startDate: appliedStartDate,
-    })
-  }
-
-  function loadTemporalSlice(
-    filter: TemporalMessageFilter,
-    offset: number,
-    conversationId = temporalConversation,
-    order = temporalOrder
-  ) {
-    const requestId = ++nextRequest.current
-    activeTemporalSlice.current = requestId
-    setTemporal(current => (current?.kind === 'ready' ? { ...current, updating: true } : { kind: 'loading' }))
-    worker.current?.postMessage({
-      type: 'temporal-slice',
-      requestId,
-      timeZone: selectedTimeZone(zone),
-      startDate: appliedStartDate,
-      filter,
-      conversationId,
-      order,
-      offset,
-      limit: 50,
     })
   }
 
@@ -603,7 +608,7 @@ export function App() {
                 setTemporalContents({})
                 loadTemporalSlice(visibleRoute.filter, 0, temporalConversation, order)
               }}
-              onPage={offset => loadTemporalSlice(visibleRoute.filter, offset)}
+              onPage={offset => loadTemporalSlice(visibleRoute.filter, offset, temporalConversation, temporalOrder)}
               onOpen={openTemporalContent}
             />
           )}
@@ -619,7 +624,7 @@ export function App() {
                 setOutlineQuery(query)
                 if (route.page === 'conversation') loadOutline(route.id, 0, query || undefined)
               }}
-              onPage={offset => route.page === 'conversation' && loadOutline(route.id, offset)}
+              onPage={offset => route.page === 'conversation' && loadOutline(route.id, offset, outlineQuery || undefined)}
               onOpen={openContent}
             />
           )}
@@ -832,7 +837,7 @@ function RecapView({
       </form>
       <section class="recap-composer">
         <div class="recap-prompt-card recap-module-list"><h2>Prompt modules</h2><p class="chart-note">Evidence and processing instructions are always included.</p>
-          {recapPromptModules.map(module => <label class="recap-module" key={module}><input type="checkbox" checked={settings.modules.includes(module)} onChange={event => onChange({ modules: event.currentTarget.checked ? [...settings.modules, module] : settings.modules.filter(value => value !== module) })} /><span><strong>{module === 'room' ? 'Room portrait' : module[0]!.toUpperCase() + module.slice(1)}</strong><small>{descriptions[module]}</small></span></label>)}
+          {recapPromptModules.map(module => <label class="recap-module" key={module}><input type="checkbox" aria-label={module} checked={settings.modules.includes(module)} onChange={event => onChange({ modules: event.currentTarget.checked ? [...settings.modules, module] : settings.modules.filter(value => value !== module) })} /><span><strong>{module === 'room' ? 'Room portrait' : module[0]!.toUpperCase() + module.slice(1)}</strong><small>{descriptions[module]}</small></span></label>)}
         </div>
         <section class="recap-prompt-card"><div class="chart-heading"><h2>Prompt preview</h2><CopyRecapPrompt prompt={prompt} /></div><pre class="recap-prompt">{prompt}</pre></section>
       </section>
@@ -1365,12 +1370,12 @@ function ConversationView({
               <p class="chart-note">{outline.total.toLocaleString()} matching turns. Select a row to show its text.</p>
               <div class="turn-list">
                 {outline.turns.map(turn => (
-                  <article class={`turn ${turn.role}`} onClick={() => onOpen(turn.id)}>
+                  <article class={`turn ${turn.role}`}><button type="button" class="turn-trigger" onClick={() => onOpen(turn.id)} aria-expanded={contents[turn.id] !== undefined}>
                     <span>
                       #{turn.index} · {turn.role} · {turn.input.words || turn.output.words} words · session{' '}
                       {turn.session || 'untimed'}
                     </span>
-                    <strong>{turn.preview}</strong>
+                    <strong>{turn.preview}</strong></button>
                     {contents[turn.id] && <pre>{contents[turn.id]}</pre>}
                   </article>
                 ))}

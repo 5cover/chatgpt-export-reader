@@ -146,7 +146,7 @@ export type ProjectAnalytics = {
   output: TextMetrics;
   other: TextMetrics;
   activeDays: number;
-  days: Array<{ date: string; messages: number; prompts: number; input: TextMetrics; output: TextMetrics; other: TextMetrics }>;
+  days: { date: string; messages: number; prompts: number; input: TextMetrics; output: TextMetrics; other: TextMetrics }[];
 };
 
 export type TurnBin = {
@@ -729,7 +729,7 @@ function includeMessage(message: Message, context: Context): boolean {
 }
 
 function validateTemporalFilter(filter: TemporalMessageFilter): void {
-  if (filter.role !== "user" && filter.role !== "assistant")
+  if (!["user", "assistant"].includes(filter.role))
     throw new RangeError('role must be "user" or "assistant".');
   if (!Number.isInteger(filter.hour) || filter.hour < 0 || filter.hour > 23)
     throw new RangeError("hour must be an integer between 0 and 23.");
@@ -1039,7 +1039,7 @@ function fillDays(
   const present = [...days.keys()].sort();
   if (present.length === 0) return [];
   const result: AnalyticsDay[] = [];
-  let current = new Date(`${present[0]}T12:00:00Z`);
+  const current = new Date(`${present[0]!}T12:00:00Z`);
   const end = present.at(-1)!;
   while (true) {
     const date = context.dayKey(current.getTime());
