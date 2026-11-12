@@ -2,26 +2,27 @@
 
 ## Project Structure & Module Organization
 
-This repository is a small TypeScript CLI for turning ChatGPT exports into Markdown.
+This is a TypeScript workspace for reading and investigating ChatGPT exports.
 
-- `src/cli.ts` is the current entry point.
-- `src/input/` contains import and parsing logic for export formats.
-- `src/output/` contains Markdown rendering and file-writing logic.
-- `src/lib/` holds shared transformation helpers such as tree linearization and Markdown utilities.
-- `src/types.ts` defines shared types.
-- `dist/` is the build output from TypeScript and should not be edited manually.
+- `packages/core/src/` owns normalization, analytics, timing, evidence, and recap semantics.
+- `packages/cli/src/` owns command-line import and output.
+- `apps/dashboard/src/` owns browser-local exploration and worker orchestration.
+- Core and CLI tests live in their package's `test/` directories. Dashboard browser regressions live in `apps/dashboard/test/`.
+- `apps/dashboard/ROADMAP.md` records the dashboard's design rationale and completion evidence.
+- `dist/` is generated output and must not be edited manually.
 
-Keep sample exports and generated output outside `src/` (for example `exports/` and `out/` as used by `src/cli.ts`).
+Keep personal exports and generated output outside source and version control.
 
 ## Build, Test, and Development Commands
 
-- `pnpm build` — compile TypeScript from `src/` to `dist/`.
+- `pnpm build` - compile the core and CLI workspace packages.
 - `pnpm lint` - run strict ESLint checks across all workspace code, tests, and tooling, including dashboard CSS and HTML.
 - `pnpm lint:fix` - apply automatic ESLint fixes across the workspace.
 - `pnpm test:lint` - verify lint rule enforcement and ignored paths.
-- `node dist/cli.js` — run the built CLI after a successful build.
+- `pnpm --filter @chatgpt-export-reader/dashboard test` - run dashboard interaction and accessibility regressions using an installed Chromium. Set `BROWSER_PATH` when it is not at `/usr/bin/chrome`; never download a browser automatically.
+- `node packages/cli/dist/cli.js` - run the built CLI.
 
-Use `pnpm build:all` before `pnpm lint` so workspace package declarations are available for type-aware linting. Run `pnpm test:lint`, `pnpm --filter @chatgpt-export-reader/core test`, and `pnpm --filter chatgpt-export-reader test` as the minimum validation before submitting changes.
+Use `pnpm build:all` before `pnpm lint` so workspace package declarations are available for type-aware linting. Run `pnpm test:lint`, `pnpm --filter @chatgpt-export-reader/core test`, and `pnpm --filter chatgpt-export-reader test` as the minimum validation before submitting changes. For dashboard behavior changes, also run the dashboard browser suite. It starts a localhost server and may need an environment that permits local sockets.
 
 ## Coding Style & Naming Conventions
 
@@ -41,6 +42,14 @@ Use TypeScript with strict compiler settings. Follow the existing style in the r
 - Avoid nested headings, repeated section labels, and one-item accordions. Related content should follow the control or chart that drives it.
 - When a chart setting changes, update the plotted data and retain the user's zoom unless the underlying date range changes. Check behavior, not only labels, when validating chart controls.
 - Check full-width and narrow layouts for dense tables and prompt builders. Keep the recap prompt visible beside module controls on wide screens, and explain each optional module.
+- Treat period, timezone, and project as one analysis scope. Keep scope separate from chart zoom, preserve it through evidence drill-downs, and make recap overrides explicit. A project filter must not silently shrink the comparison period.
+- Distinguish message-date filtering from calendar padding. Inactive days belong in comparable periods, but missing export history must not be presented as proven inactivity.
+- Keep metric meaning, aggregation, units, and precision consistent through shared definitions and value components. Label cumulative first-reply delay separately from typical latency or compute time.
+- Use native controls with visible labels, announced selected states, keyboard alternatives for charts, and predictable focus restoration. Test rendered accessibility as well as source lint rules.
+- Keep independent message requests independent. Cancel stale view queries on scope changes or navigation; share a typed worker protocol and surface worker failures with a recovery path.
+- Validate every project-name write through the same rules. Preserve valid stored names when recovering malformed entries, and surface storage failures.
+- Bound table and plot rendering for large exports. Run expensive optional analysis only on demand, and give aggregate views a clear path to their underlying evidence.
+- Dashboard regression fixtures must be synthetic. Cover reset and clearing semantics, independent loads, data-changing measure switches, zoom, naming, recap artifact lifetime, and narrow layouts. Do not validate only labels or mirror implementation internals.
 
 Do not hand-format around lint rules; run ESLint and keep changes minimal.
 

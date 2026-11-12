@@ -18,7 +18,7 @@ The shared root ESLint configuration combines JavaScript recommended rules with 
 
 Prettier settings live in the root `package.json` and apply to every workspace package, including the dashboard. Run `pnpm exec prettier --write <files>` to format selected files with the shared configuration.
 
-ESLint 9 is selected to satisfy the JSX accessibility plugin's peer range; TypeScript 6 satisfies typescript-eslint's supported range. `pnpm test:lint` exercises rule enforcement and ignore behavior using ESLint's public API. Deployment runs the workspace build, lint, and lint configuration tests before uploading the dashboard.
+ESLint 9 is selected to satisfy the JSX accessibility plugin's peer range; TypeScript 6 satisfies typescript-eslint's supported range. `pnpm test:lint` exercises rule enforcement and ignore behavior using ESLint's public API. Deployment runs the workspace build, lint, lint configuration tests, core and CLI regressions, and dashboard interaction/accessibility tests before uploading the dashboard. The browser suite discovers an installed Chromium; it does not download one.
 
 ## Usage statistics
 
@@ -72,9 +72,22 @@ pnpm build:dashboard
 pnpm --filter @chatgpt-export-reader/dashboard preview
 ```
 
-It provides local text-volume analytics, daily and temporal-rhythm views, configurable observed sessions, concentration rankings, a paginated conversation evidence explorer with literal search and on-demand message text, and a recap page that generates a downloadable YAML or TOON evidence file plus an example prompt. The static dashboard deploys to GitHub Pages on pushes to `main`.
+A shared analysis scope (inclusive period, timezone, optional project, and session definition) follows you through Overview, Time and rhythm, Projects, Conversations, and Recap. Overview compares equal-length periods and separates active-day frequency from depth. Charts have keyboard-accessible daily values; tables paginate large collections. Session and project links preserve a path to contributing conversations and on-demand message evidence. Repeated-language analysis runs on demand and links to matching word sequences. Recap evidence inherits the current scope unless explicitly overridden; prompt modules do not invalidate its download. The static dashboard deploys to GitHub Pages on pushes to `main`.
 
-The dashboard also estimates daily interaction time from message lengths (40 words/minute typing, 200 words/minute reading, 3 seconds to 15 minutes per message). Reply-to-next-prompt gaps constrain the estimate; waiting for the first reply is excluded. Reply latency pairs each prompt with its first assistant descendant before another user turn. The headline latency excludes waits over 30 minutes and reports them separately. Neither metric measures actual screen time or model computation. The Projects page groups chats by exported project ID, allows inline names stored in this browser, and imports or exports those names as JSON. Recap prompt modules can be switched on and off in the preview.
+The dashboard also estimates daily interaction time from message lengths (40 words/minute typing, 200 words/minute reading, 3 seconds to 15 minutes per message). Reply-to-next-prompt gaps constrain the estimate; waiting for the first reply is excluded. Total first-reply delay pairs each prompt with its first assistant descendant before another user turn. The delay total excludes waits over 30 minutes and reports them separately. Neither metric measures actual screen time or model computation. The Projects page groups chats by exported project ID, allows inline names stored in this browser, and imports or exports those names as JSON. Recap prompt modules can be switched on and off in the preview.
+
+### Dashboard validation
+
+```sh
+pnpm build:all
+pnpm lint
+pnpm test:lint
+pnpm --filter @chatgpt-export-reader/dashboard test
+```
+
+Browser tests build and serve the production dashboard, then use `playwright-core` with the installed Chromium at `/usr/bin/chrome`. Set `BROWSER_PATH` to another installed executable. No browser is downloaded. The suite exercises synthetic ZIP exports, interaction regressions, worker recovery, responsive layouts, and rendered accessibility with axe. Set `DASHBOARD_ARTIFACT_DIR` to save viewport screenshots for visual review.
+
+Analysis scope and selected day are encoded in the URL; reloading still requires reimporting the export because conversations are not persisted. Comparisons warn when the export bounds do not cover both periods. These bounds do not establish that the history is complete. Project names are the only user metadata persisted locally, with portable mapping import/export.
 
 ## Step 3
 

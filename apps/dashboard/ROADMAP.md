@@ -1,3 +1,42 @@
+# Dashboard roadmap implementation record
+
+Implemented on 2026-11-12. The original audit below is retained as design rationale; its old line references describe the audited version, not the current source.
+
+## Completed
+
+- [x] Fix all ten correctness defects: explicit reset and search clearing, independent message loads, uniform project-name validation and recovery, responsive chart sizing, domain-aware zoom, recap evidence lifetime, safe route parsing, timezone-consistent timestamps, and timeline-to-outline disclosure.
+- [x] Introduce shared analysis scope with inclusive dates, timezone, project, session definition, URL serialization, and visible applied scope. Keep chart viewport separate. Keep sparse projects on the same calendar and preserve untimed all-history activity.
+- [x] Compare equal-length periods, distinguish active-day frequency from prompting depth, show project-share changes, and warn about insufficient export coverage. Remove the arbitrary two-hour threshold rather than implying a universal excessive-use limit.
+- [x] Reduce Overview to four primary indicators; move text volume, cumulative reply delay, and data coverage to supporting views. Use shared metric definitions, related-unit displays, and nonzero duration precision.
+- [x] Organize Overview, Time and rhythm, Projects, Conversations, and Recap around investigation and evidence, not a hierarchy of accordions. Compact the repeated hero and remove redundant headings.
+- [x] Provide native labelled choices, current navigation state, route focus and titles, announced statuses, keyboard date selection, daily data alternatives, focus-safe inline renaming, and keyboard mapping import.
+- [x] Preserve disclosure contents and exploration state; make message disclosures truly expandable, including empty content. Associate prompt-module descriptions without overriding visible names.
+- [x] Replace the unreadable narrow-screen calendar with a seven-column month view and explicit evidence links. Bound and label the session plot; link sessions to every contributing conversation rather than only one.
+- [x] Make projects addressable and sortable, offer a dashboard-wide project lens, and carry friendly project identity into conversations and recap evidence.
+- [x] Separate recap scope/evidence settings from prompt composition, place downloads next to generation, and retain copy feedback only for the prompt actually copied.
+- [x] Split application orchestration from pages, domain components, routing, formatting, worker protocol/client, and metric definitions. Share chart, evidence, project identity, file-button, choice, and table behavior.
+- [x] Add bounded tables with optional columns, bounded plots and analysis caches, on-demand repeated-language analysis, debounced search, bounded import diagnostics, and recoverable worker failures.
+- [x] Add browser interaction and accessibility regressions using synthetic exports and an installed browser, plus core regressions for calendar padding, timezone boundaries, project identity, and punctuation-independent phrase evidence.
+- [x] Update repository guidance and validation documentation to preserve these domain and interaction rules.
+
+## Sources of truth and validation
+
+- Scope: [analysis-scope.ts](src/analysis-scope.ts), [scope-controls.tsx](src/scope-controls.tsx).
+- Chart and metric semantics: [daily-series-chart.tsx](src/daily-series-chart.tsx), [metric-definitions.ts](src/metric-definitions.ts), [methodology.tsx](src/methodology.tsx).
+- Evidence: [conversation-view.tsx](src/conversation-view.tsx), [temporal-view.tsx](src/temporal-view.tsx), [session-evidence.tsx](src/session-evidence.tsx), [worker-message.tsx](src/worker-message.tsx).
+- Identity and composition: [project-identity.tsx](src/project-identity.tsx), [projects.tsx](src/projects.tsx), [recap-view.tsx](src/recap-view.tsx).
+- Regression suite: [dashboard.test.mjs](test/dashboard.test.mjs). Run `pnpm --filter @chatgpt-export-reader/dashboard test`; set `BROWSER_PATH` for an existing Chromium outside the documented default. No browser downloads are performed.
+- The deployment workflow also runs core, CLI, and production-dashboard interaction/accessibility regressions using an installed Chromium.
+- Minimum checks: `pnpm build:all`, `pnpm lint`, `pnpm test:lint`, core and CLI tests, and the dashboard browser suite.
+
+Final verification passed: workspace build, strict lint, lint-configuration tests, core and CLI regressions, formatting, and all 11 production-browser tests. The browser suite was also verified with the GitHub Pages base path; it includes axe checks on every page and the narrow calendar. Synthetic desktop and narrow viewport screenshots were visually reviewed.
+
+No major product decision remains necessary for this roadmap. Personal budgets, normative usage limits, and automatic judgments about productivity or wellbeing are deliberately not inferred from timestamps.
+
+---
+
+## Original audit
+
 ## Overall assessment
 
 **The dashboard currently exposes its calculations more successfully than it supports an investigation.** A power user can inspect many statistics, but answering “What changed, what drove it, and which conversations explain it?” requires manually connecting views that do not share enough context.
@@ -13,18 +52,18 @@ I reviewed all dashboard source files, CSS, HTML, and configuration, and exercis
 
 ## Project-specific audit criteria
 
-| Criterion | What correctness means for this dashboard |
-| --- | --- |
-| **Scope integrity** | Period, timezone, project, and selected day remain explicit and consistent across summaries, charts, tables, and exports. |
-| **Metric honesty** | Counts, estimated interaction time, cumulative reply delay, session span, and conversation lifetime cannot be mistaken for one another. |
-| **Diagnostic usefulness** | A view helps answer a usage question, not merely display an available calculation. |
-| **Evidence continuity** | A trend leads to contributing projects, conversations, and messages without losing the investigation context. |
-| **Comparison quality** | Changes account for period length, inactive days, and incomplete evidence; raw lifetime totals are not the only perspective. |
-| **Project identity** | Friendly names are validated, persisted, and resolved consistently wherever projects appear. |
-| **Interaction integrity** | Reset clears, selection is visible, independent requests do not cancel each other, and presentation changes preserve exploration state. |
+| Criterion                  | What correctness means for this dashboard                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Scope integrity**        | Period, timezone, project, and selected day remain explicit and consistent across summaries, charts, tables, and exports.                |
+| **Metric honesty**         | Counts, estimated interaction time, cumulative reply delay, session span, and conversation lifetime cannot be mistaken for one another.  |
+| **Diagnostic usefulness**  | A view helps answer a usage question, not merely display an available calculation.                                                       |
+| **Evidence continuity**    | A trend leads to contributing projects, conversations, and messages without losing the investigation context.                            |
+| **Comparison quality**     | Changes account for period length, inactive days, and incomplete evidence; raw lifetime totals are not the only perspective.             |
+| **Project identity**       | Friendly names are validated, persisted, and resolved consistently wherever projects appear.                                             |
+| **Interaction integrity**  | Reset clears, selection is visible, independent requests do not cancel each other, and presentation changes preserve exploration state.  |
 | **Accessible exploration** | Keyboard and nonvisual users can select dates, understand selected measures, inspect chart values, rename projects, and import mappings. |
-| **Power-user scale** | Thousands of conversations remain searchable, sortable, navigable, and responsive without overwhelming markup or controls. |
-| **Maintainable semantics** | Shared components encode these rules; markup, worker contracts, formatting, and regression tests reinforce them. |
+| **Power-user scale**       | Thousands of conversations remain searchable, sortable, navigable, and responsive without overwhelming markup or controls.               |
+| **Maintainable semantics** | Shared components encode these rules; markup, worker contracts, formatting, and regression tests reinforce them.                         |
 
 ## 1. Confirmed correctness defects
 
@@ -252,15 +291,15 @@ A compact calendar should have a usable selected-day inspector or an alternative
 
 The most valuable extractions are domain components, not a generic collection of cards.
 
-| Capability | Responsibility it should enforce |
-| --- | --- |
-| **AnalysisScope** | Applied period, timezone, project, reset semantics, and scope serialization. |
-| **MetricDefinition / MetricValue** | Meaning, aggregation, related units, duration precision, missing values, and methodology links. |
-| **DailySeriesChart** | Shared sizing, date mapping, zoom policy, selection, rolling mean, empty state, and accessible data alternative. |
-| **ProjectIdentity / ProjectNameEditor** | One reactive name store, consistent validation, focus restoration, persistence errors, and project links. |
-| **MessageEvidence** | Metadata, independent loading state, expandable content, errors, and stable message identity. |
-| **EvidenceTable** | Existing sorting plus labels, empty state, pagination, consistent numeric formatting, and optional columns. |
-| **RecapComposer** | Separate evidence settings, prompt settings, generation state, artifact availability, and copy feedback. |
+| Capability                              | Responsibility it should enforce                                                                                 |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **AnalysisScope**                       | Applied period, timezone, project, reset semantics, and scope serialization.                                     |
+| **MetricDefinition / MetricValue**      | Meaning, aggregation, related units, duration precision, missing values, and methodology links.                  |
+| **DailySeriesChart**                    | Shared sizing, date mapping, zoom policy, selection, rolling mean, empty state, and accessible data alternative. |
+| **ProjectIdentity / ProjectNameEditor** | One reactive name store, consistent validation, focus restoration, persistence errors, and project links.        |
+| **MessageEvidence**                     | Metadata, independent loading state, expandable content, errors, and stable message identity.                    |
+| **EvidenceTable**                       | Existing sorting plus labels, empty state, pagination, consistent numeric formatting, and optional columns.      |
+| **RecapComposer**                       | Separate evidence settings, prompt settings, generation state, artifact availability, and copy feedback.         |
 
 Specific structural concerns:
 
