@@ -10,6 +10,6 @@
     "publish:check": "pnpm build && pnpm --filter @chatgpt-export-reader/core check && pnpm --filter chatgpt-export-reader check && pnpm --filter @chatgpt-export-reader/core pack --dry-run --json && pnpm --filter chatgpt-export-reader pack --dry-run --json"
   },
   "devDependencies": {
-    "prettier": "^3.9.6"
+    "prettier": "^3.10.0"
   }
 }
