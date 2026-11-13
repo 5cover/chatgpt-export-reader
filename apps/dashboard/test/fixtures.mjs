@@ -22,6 +22,7 @@ export function syntheticExport(count = 70) {
         message: {
           author: { role: 'assistant' },
           create_time: at + 90,
+          metadata: { model_slug: 'synthetic-model' },
           content: {
             content_type: 'text',
             parts: [`Consider repeated evidence carefully. ${'explanation '.repeat(index + 1)}`],

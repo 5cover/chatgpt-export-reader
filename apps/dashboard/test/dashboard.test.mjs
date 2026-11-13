@@ -148,6 +148,17 @@ test(
     await page.getByText('0 matching turns.', { exact: true }).waitFor()
     await search.fill('')
     await page.getByText('2 matching turns.', { exact: true }).waitFor()
+    const timestamp = page.locator('.message-meta time').first()
+    assert.equal(await timestamp.getAttribute('datetime'), '2026-03-11T12:00:00.000Z')
+    assert.equal(
+      await timestamp.innerText(),
+      await page.evaluate(() =>
+        new Intl.DateTimeFormat(undefined, { timeZone: 'Europe/Paris', dateStyle: 'medium', timeStyle: 'short' }).format(
+          new Date('2026-03-11T12:00:00.000Z')
+        )
+      )
+    )
+    assert.match(await page.locator('.message-evidence').last().locator('.message-meta').innerText(), /synthetic-model/)
     await page.locator('.message-trigger').evaluateAll(buttons => buttons.forEach(button => button.click()))
     await page.waitForFunction(() => document.querySelectorAll('.message-evidence pre').length === 2)
     await page.locator('.message-trigger').first().click()

@@ -9,7 +9,7 @@ import { ProjectLink } from './project-identity.js'
 import { WorkerMessage } from './worker-message.js'
 import { SortableTable } from './sortable-table.js'
 import { SessionTable } from './session-evidence.js'
-import { formatDuration } from './format.js'
+import { formatDate, formatDuration } from './format.js'
 export function ConversationView({
   id,
   client,
@@ -136,7 +136,13 @@ export function ConversationView({
                     preview={turn.preview}
                     metadata={
                       <span>
-                        Turn {turn.index}; {turn.input.words + turn.output.words} words
+                        Turn {turn.index}; {turn.input.words + turn.output.words} words;{' '}
+                        {turn.createTime ? (
+                          <time dateTime={turn.createTime}>{formatDate(turn.createTime, scope.timeZone)}</time>
+                        ) : (
+                          'Undated'
+                        )}
+                        {turn.model && `; ${turn.model}`}
                       </span>
                     }
                   />

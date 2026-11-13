@@ -175,6 +175,7 @@ export type TurnOutline = {
   index: number
   role: string
   createTime?: string
+  model?: string
   input: TextMetrics
   output: TextMetrics
   preview: string
@@ -220,6 +221,7 @@ type Event = {
   role: string
   body: string
   createTime?: number
+  model?: string
   input: TextMetrics
   output: TextMetrics
   other: TextMetrics
@@ -516,6 +518,7 @@ function collectEvents(chats: Iterable<Chat>, context: Context): Event[] {
         role: message.role,
         body: message.body,
         createTime: message.createTime,
+        model: message.model,
         input: message.role === 'user' ? metrics : emptyText(),
         output: message.role === 'assistant' ? metrics : emptyText(),
         other: message.role !== 'user' && message.role !== 'assistant' ? metrics : emptyText(),
@@ -809,6 +812,7 @@ function toOutline(event: Event, index: number): TurnOutline {
     index: index + 1,
     role: event.role,
     createTime: event.createTime === undefined ? undefined : new Date(event.createTime).toISOString(),
+    model: event.model,
     input: event.input,
     output: event.output,
     preview: preview(event.body),
