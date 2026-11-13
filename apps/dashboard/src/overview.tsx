@@ -43,6 +43,11 @@ export function Overview({
         <Metric
           label="Estimated interaction time"
           value={formatDuration(stats.timing.summary.usageMs)}
+          secondary={
+            stats.days.length
+              ? `${formatDuration(stats.timing.summary.usageMs / stats.days.length)} per calendar day`
+              : 'No calendar days'
+          }
           note={delta(stats.timing.summary.usageMs, previous?.timing.summary.usageMs)}
         />
         <Metric

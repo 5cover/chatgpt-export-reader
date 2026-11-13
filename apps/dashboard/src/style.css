@@ -41,6 +41,16 @@ a:hover {
 [hidden] {
   display: none;
 }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+}
 h1,
 h2,
 h3,
@@ -412,6 +422,31 @@ figcaption {
 }
 .evidence-table tr:hover td {
   background: #f4f8f5;
+}
+.evidence-table .clickable-row {
+  cursor: pointer;
+}
+.evidence-table .clickable-row:focus-visible td {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 34px;
+  border: 1px solid #99b1a8;
+  border-radius: 5px;
+  color: var(--accent);
+  background: #fff;
+  text-decoration: none;
+}
+.icon-button:hover {
+  background: #e6eeea;
+}
+.material-icons {
+  font-size: 20px;
 }
 .text-value {
   display: inline-grid;

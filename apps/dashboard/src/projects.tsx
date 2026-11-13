@@ -1,12 +1,32 @@
 import { useMemo, useState } from 'preact/hooks'
 import type { AnalyticsStatistics } from '@chatgpt-export-reader/core'
-import { ProjectLink, ProjectNameEditor, projectNamesKey, useProjectNames, validNames } from './project-identity.js'
+import { ProjectNameEditor, projectNamesKey, projectRoute, useProjectNames, validNames } from './project-identity.js'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
 import { Choice, FileButton, TextValue } from './ui.js'
 import { formatDuration, formatShare } from './format.js'
 import { DailySeriesChart } from './daily-series-chart.js'
 import { dailyValues, measures, type Measure } from './metric-definitions.js'
 import { ConversationTable } from './conversation-table.js'
+import { chatGptProjectUrl } from './chatgpt-urls.js'
+
+function OpenProjectInChatGPT({ id }: { id: string }) {
+  if (!id) return null
+  return (
+    <a
+      class="icon-button"
+      href={chatGptProjectUrl(id)}
+      target="_blank"
+      rel="noreferrer"
+      title="Open project in ChatGPT"
+      onClick={event => event.stopPropagation()}>
+      <span class="material-icons" aria-hidden="true">
+        open_in_new
+      </span>
+      <span class="visually-hidden">Open project in ChatGPT</span>
+    </a>
+  )
+}
+
 export function Projects({
   stats,
   previous,
@@ -30,11 +50,17 @@ export function Projects({
   )
   const columns: SortableColumn<(typeof rows)[number]>[] = [
     {
+      id: 'open',
+      label: 'Open in ChatGPT',
+      align: 'left',
+      render: project => <OpenProjectInChatGPT id={project.id} />,
+    },
+    {
       id: 'name',
       label: 'Project',
       align: 'left',
       compare: (a, b) => (names[a.id] || a.id).localeCompare(names[b.id] || b.id),
-      render: project => <ProjectLink id={project.id} />,
+      render: project => <ProjectNameEditor id={project.id} />,
     },
     {
       id: 'time',
@@ -134,6 +160,7 @@ export function Projects({
         <a href="#/projects">All projects</a>
         <h3>
           <ProjectNameEditor key={id} id={id} />
+          <OpenProjectInChatGPT id={id} />
         </h3>
         {!project ? (
           <p>No activity for this project in the current scope. Change the project filter or period above.</p>
@@ -198,6 +225,10 @@ export function Projects({
         columns={columns}
         initialSort={{ column: 'time', direction: 'descending' }}
         rowKey={project => project.id}
+        onRowClick={project => {
+          location.hash = projectRoute(project.id)
+        }}
+        rowLabel={project => `Open project ${names[project.id] || project.id}`}
       />
     </section>
   )

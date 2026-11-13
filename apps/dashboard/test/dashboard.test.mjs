@@ -173,7 +173,6 @@ test(
     await importData()
     await navigate('Projects')
     await page.getByText(/invalid saved names were ignored/).waitFor()
-    await page.getByRole('link', { name: 'Research', exact: true }).click()
     const rename = page.getByRole('button', { name: 'Rename project Research', exact: true })
     await rename.focus()
     await page.keyboard.press('Enter')
@@ -198,6 +197,13 @@ test(
       'All projects'
     )
     assert.ok(await page.getByRole('link', { name: 'Science', exact: true }).count())
+    await navigate('Projects')
+    const projectRow = page.locator('.evidence-table tbody tr').filter({ hasText: 'Science' })
+    await projectRow.locator('td').nth(2).click()
+    await page.getByRole('button', { name: 'Rename project Science', exact: true }).waitFor()
+    const openProject = page.getByRole('link', { name: 'Open project in ChatGPT', exact: true })
+    assert.equal(await openProject.getAttribute('href'), 'https://chatgpt.com/g/project-research')
+    assert.equal(await openProject.getAttribute('title'), 'Open project in ChatGPT')
     await navigate('Projects')
     await page.getByRole('button', { name: 'Import names', exact: true }).focus()
     assert.equal(

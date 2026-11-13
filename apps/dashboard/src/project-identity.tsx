@@ -124,6 +124,7 @@ export function ProjectNameEditor({ id }: { id: string }) {
         aria-describedby={error ? errorId : undefined}
         maxLength={200}
         value={draft}
+        onClick={event => event.stopPropagation()}
         onInput={event => setDraft(event.currentTarget.value)}
         onKeyDown={event => {
           if (event.key === 'Enter') {
@@ -136,10 +137,22 @@ export function ProjectNameEditor({ id }: { id: string }) {
           }
         }}
       />
-      <button class="ui-button" type="button" onClick={finish}>
+      <button
+        class="ui-button"
+        type="button"
+        onClick={event => {
+          event.stopPropagation()
+          finish()
+        }}>
         Save
       </button>
-      <button class="ui-button" type="button" onClick={() => setEditing(false)}>
+      <button
+        class="ui-button"
+        type="button"
+        onClick={event => {
+          event.stopPropagation()
+          setEditing(false)
+        }}>
         Cancel
       </button>
       {error && (
@@ -155,7 +168,8 @@ export function ProjectNameEditor({ id }: { id: string }) {
       class="editable-project text-button"
       title="Click to rename"
       aria-label={`Rename project ${names[id] || id}`}
-      onClick={() => {
+      onClick={event => {
+        event.stopPropagation()
         setDraft(names[id] ?? '')
         setError('')
         setEditing(true)

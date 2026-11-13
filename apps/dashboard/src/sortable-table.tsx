@@ -14,6 +14,8 @@ export type SortableTableProps<Row> = {
   columns: readonly SortableColumn<Row>[]
   initialSort: { column: string; direction?: 'ascending' | 'descending' }
   rowKey: (row: Row) => string
+  onRowClick?: (row: Row) => void
+  rowLabel?: (row: Row) => string
 }
 export function SortableTable<Row>({
   label = 'Evidence',
@@ -21,6 +23,8 @@ export function SortableTable<Row>({
   columns,
   initialSort,
   rowKey,
+  onRowClick,
+  rowLabel,
 }: SortableTableProps<Row>) {
   const [sort, setSort] = useState({ column: initialSort.column, direction: initialSort.direction ?? 'ascending' })
   const [page, setPage] = useState(0)
@@ -77,7 +81,18 @@ export function SortableTable<Row>({
           </thead>
           <tbody>
             {sorted.slice(offset, offset + 50).map(row => (
-              <tr key={rowKey(row)}>
+              <tr
+                key={rowKey(row)}
+                class={onRowClick ? 'clickable-row' : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onClick={() => onRowClick?.(row)}
+                onKeyDown={event => {
+                  if (event.target === event.currentTarget && onRowClick && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault()
+                    onRowClick(row)
+                  }
+                }}
+                aria-label={onRowClick ? rowLabel?.(row) : undefined}>
                 {visible.map(column => (
                   <td key={column.id} class={column.align === 'left' ? 'left' : ''}>
                     {column.render(row)}
