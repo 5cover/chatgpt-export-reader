@@ -1,3 +1,5 @@
+# Keep this file as the canonical repository guide. Update it in the same change whenever repository structure, architecture, workflows, or established constraints change; do not leave superseded guidance in place.
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization
@@ -7,6 +9,8 @@ This is a TypeScript workspace for reading and investigating ChatGPT exports.
 - `packages/core/src/` owns normalization, analytics, timing, evidence, and recap semantics.
 - `packages/cli/src/` owns command-line import and output.
 - `apps/dashboard/src/` owns browser-local exploration and worker orchestration.
+- `packages/core/src/recap-schema.ts` owns recap context format and strategy values, their derived types, the Zod schema, and its generated JSON Schema YAML.
+- `packages/core/src/recap-prompt.ts` owns recap prompt module content, descriptions, and module types.
 - Core and CLI tests live in their package's `test/` directories. Dashboard browser regressions live in `apps/dashboard/test/`.
 - `apps/dashboard/ROADMAP.md` records the dashboard's design rationale and completion evidence.
 - `dist/` is generated output and must not be edited manually.
@@ -19,7 +23,7 @@ Keep personal exports and generated output outside source and version control.
 - `pnpm lint` - run strict ESLint checks across all workspace code, tests, and tooling, including dashboard CSS and HTML.
 - `pnpm lint:fix` - apply automatic ESLint fixes across the workspace.
 - `pnpm test:lint` - verify lint rule enforcement and ignored paths.
-- `pnpm --filter @chatgpt-export-reader/dashboard test` - run dashboard interaction and accessibility regressions using an installed Chromium. Set `BROWSER_PATH` when it is not at `/usr/bin/chrome`; never download a browser automatically.
+- `pnpm --filter @chatgpt-export-reader/dashboard test` - run dashboard interaction and accessibility regressions using Playwright-managed Chromium. Set `BROWSER_PATH` to override the browser executable; install Playwright's Chromium separately when needed. The test command does not download a browser.
 - `node packages/cli/dist/cli.js` - run the built CLI.
 
 Use `pnpm build:all` before `pnpm lint` so workspace package declarations are available for type-aware linting. Run `pnpm test:lint`, `pnpm --filter @chatgpt-export-reader/core test`, and `pnpm --filter chatgpt-export-reader test` as the minimum validation before submitting changes. For dashboard behavior changes, also run the dashboard browser suite. It starts a localhost server and may need an environment that permits local sockets.

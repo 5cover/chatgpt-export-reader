@@ -1,10 +1,6 @@
-export type { Chat, Message, Thought } from "./types.js";
-export { collectTiming, type TimingStatistics, type TimingBreakdown, type TimingTotals } from './timing.js';
-export {
-  extractV1UsageConversation,
-  isEmptyV1Record,
-  normalizeV1Chat,
-} from "./v1.js";
+export type { Chat, Message, Thought } from './types.js'
+export { collectTiming, type TimingStatistics, type TimingBreakdown, type TimingTotals } from './timing.js'
+export { extractV1UsageConversation, isEmptyV1Record, normalizeV1Chat } from './v1.js'
 export {
   collectAnalytics,
   collectConversationDetail,
@@ -34,7 +30,7 @@ export {
   type TurnBin,
   type TurnOutline,
   type TurnPage,
-} from "./analytics.js";
+} from './analytics.js'
 export {
   buildPromptDistribution,
   dailyMetricValue,
@@ -49,10 +45,12 @@ export {
   type PromptDistributionBin,
   type SessionContinuation,
   type SessionDepthBin,
-} from "./derived-metrics.js";
+} from './derived-metrics.js'
 export {
   buildRecap,
   createRecapPrompt,
+  recapContextFormats,
+  recapContextStrategies,
   recapPromptModules,
   recapPromptModuleDefinitions,
   type RecapPromptModule,
@@ -68,7 +66,7 @@ export {
   type RecapMessage,
   type RecapOmission,
   type RecapOptions,
-} from "./recap.js";
+} from './recap.js'
 export {
   collectUsageStatistics,
   UsageStatsAccumulator,
@@ -81,4 +79,4 @@ export {
   type UsageStatsOptions,
   type UsageSummary,
   type ConversationSummary,
-} from "./usage-stats.js";
+} from './usage-stats.js'

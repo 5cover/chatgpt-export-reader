@@ -11,9 +11,12 @@ test('selected modules follow fixed order and do not duplicate the evidence core
   assert.ok(prompt.includes('otherwise create a room from scratch'))
 })
 
-test('legacy CLI prompt remains available by default', () => {
+test('the default prompt composes the established recap modules', () => {
   const prompt = createRecapPrompt('toon')
-  assert.ok(prompt.startsWith('# ChatGPT Usage Recap: Investigator Prompt'))
+  assert.ok(prompt.startsWith('# ChatGPT Usage Recap'))
+  assert.ok(prompt.includes('## Goals and non-goals'))
+  assert.ok(prompt.includes('## Analysis procedure'))
+  assert.ok(prompt.includes('## Final objective'))
   assert.ok(prompt.includes('TOON'))
   assert.throws(() => createRecapPrompt('yaml', ['unknown']), RangeError)
 })
@@ -32,5 +35,5 @@ test('prompt module keys and dashboard descriptions come from one complete defin
   assert.deepEqual(recapPromptModules, Object.keys(recapPromptModuleDefinitions))
   assert.equal(new Set(recapPromptModules).size, recapPromptModules.length)
   assert.ok(recapPromptModules.every(module => recapPromptModuleDefinitions[module].description.length > 0))
-  assert.match(recapPromptModuleDefinitions.analysis.prompt, /## Use tools to investigate the data/)
+  assert.match(recapPromptModuleDefinitions.analysis.prompt.join('\n'), /## Use tools to investigate the data/)
 })

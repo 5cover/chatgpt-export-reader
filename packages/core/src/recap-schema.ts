@@ -1,6 +1,12 @@
 import { stringify } from 'yaml'
 import * as z from 'zod'
 
+export const recapContextStrategies = ['full', 'rolling-window'] as const
+export type RecapContextStrategy = (typeof recapContextStrategies)[number]
+
+export const recapContextFormats = ['yaml', 'yaml-anchors', 'toon'] as const
+export type RecapContextFormat = (typeof recapContextFormats)[number]
+
 export const recapContextSchema = z.object({
   schema: z.literal('chatgpt-export-reader/recap/v1').describe('Format version for this recap context.'),
   selection: z.object({
@@ -12,7 +18,7 @@ export const recapContextSchema = z.object({
       .object({ startDate: z.string(), endDate: z.string() })
       .describe('Inclusive date bounds actually used.'),
     context: z
-      .object({ strategy: z.enum(['full', 'rolling-window']), maxMessages: z.number().int().nonnegative() })
+      .object({ strategy: z.enum(recapContextStrategies), maxMessages: z.number().int().nonnegative() })
       .describe('Policy for earlier context included before the selected range.'),
     repeatedPhrases: z
       .object({ minimumScorePercentile: z.number().min(0).max(100) })

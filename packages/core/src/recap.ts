@@ -12,10 +12,10 @@ import {
 } from './analytics.js'
 import { deriveAnalyticsMetrics, type AnalyticsDerivedMetrics, type Distribution } from './derived-metrics.js'
 import type { Chat, Message } from './types.js'
-import { recapContextSchema } from './recap-schema.js'
+import { recapContextSchema, recapContextStrategies, type RecapContextStrategy } from './recap-schema.js'
 
-export type RecapContextStrategy = 'full' | 'rolling-window'
-export type RecapContextFormat = 'yaml' | 'yaml-anchors' | 'toon'
+export type { RecapContextFormat, RecapContextStrategy } from './recap-schema.js'
+export { recapContextFormats, recapContextStrategies } from './recap-schema.js'
 
 export type RecapOptions = AnalyticsOptions & {
   projectNames?: Readonly<Record<string, string>>
@@ -80,7 +80,7 @@ const recapDocumentSchema = z.object({
     timezone: z.string(),
     requestedDateRange: z.object({ startDate: z.string(), endDate: z.string() }),
     resolvedDateRange: z.object({ startDate: z.string(), endDate: z.string() }),
-    context: z.object({ strategy: z.enum(['full', 'rolling-window']), maxMessages: z.number().int().nonnegative() }),
+    context: z.object({ strategy: z.enum(recapContextStrategies), maxMessages: z.number().int().nonnegative() }),
     repeatedPhrases: z.object({ minimumScorePercentile: z.number().min(0).max(100) }),
   }),
   analytics: z.custom<RecapDocument['analytics']>(
@@ -164,7 +164,7 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
   if (resolvedStart > resolvedEnd) throw new RangeError('startDate must be on or before endDate.')
 
   const strategy = options.context?.strategy ?? 'rolling-window'
-  if (!['full', 'rolling-window'].includes(strategy))
+  if (!recapContextStrategies.includes(strategy))
     throw new RangeError('context.strategy must be "full" or "rolling-window".')
   const maxMessages = options.context?.maxMessages ?? 20
   if (!Number.isInteger(maxMessages) || maxMessages < 0)
