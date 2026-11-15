@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { before, after, beforeEach, afterEach, test } from 'node:test'
 import { spawn } from 'node:child_process'
-import { access, mkdir } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium } from 'playwright-core'
@@ -13,12 +13,6 @@ const baseURL = `http://127.0.0.1:4178${process.env.GITHUB_ACTIONS ? '/chatgpt-e
 let server, browser, context, page
 let errors = []
 before(async () => {
-  const executablePath = process.env.BROWSER_PATH || '/usr/bin/chrome'
-  await access(executablePath).catch(() => {
-    throw new Error(
-      `No browser at ${executablePath}. Set BROWSER_PATH to an installed Chromium. This command never downloads browsers.`
-    )
-  })
   let output = ''
   server = spawn(
     process.execPath,
@@ -57,7 +51,11 @@ before(async () => {
     await delay(100)
   }
   if (!started) throw new Error(`Dashboard server did not start: ${output}`)
-  browser = await chromium.launch({ executablePath, headless: true, args: ['--no-sandbox'] })
+  browser = await chromium.launch({
+    ...(process.env.BROWSER_PATH ? { executablePath: process.env.BROWSER_PATH } : {}),
+    headless: true,
+    args: ['--no-sandbox'],
+  })
 })
 after(async () => {
   await browser?.close()
@@ -246,7 +244,7 @@ test('module changes retain evidence and copy feedback tracks prompt changes', {
   await page.getByRole('checkbox', { name: 'Room portrait', exact: true }).uncheck()
   await page.waitForFunction(() => document.querySelector('.recap-prompt-card .action-status')?.textContent === '')
   assert.equal(await download.getAttribute('href'), href)
-  await page.getByLabel('Evidence format', { exact: true }).selectOption('yaml-anchors')
+  await page.locator('.recap-settings select').nth(1).selectOption('yaml-anchors')
   await page.getByRole('button', { name: 'Generate evidence' }).click()
   await download.waitFor()
   assert.match(await download.getAttribute('download'), /\.yaml$/)
