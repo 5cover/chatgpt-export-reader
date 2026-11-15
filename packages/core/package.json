@@ -21,7 +21,7 @@
   },
   "homepage": "https://github.com/5cover/chatgpt-export-reader#readme",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -50,6 +50,7 @@
   },
   "dependencies": {
     "@toon-format/toon": "^4.4.0",
+    "interner": "^1.0.0",
     "yaml": "^2.9.1",
     "zod": "^4.3.6"
   },

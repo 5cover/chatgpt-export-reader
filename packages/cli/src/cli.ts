@@ -120,7 +120,7 @@ configureCommonOptions(
   .option("--session-gap-minutes <number>", "Minutes separating observed recap sessions")
   .option("--context-strategy <full|rolling-window>", "Pre-window context strategy", "rolling-window")
   .option("--context-messages <number>", "Maximum preceding messages per conversation", "20")
-  .option("--context-format <yaml|toon>", "Recap context serialization", "yaml")
+  .option("--context-format <yaml|yaml-anchors|toon>", "Recap context serialization", "yaml")
   .option(
     "--repeated-phrase-percentile <0-100>",
     "Minimum repeated-phrase score percentile for recap evidence",
@@ -270,7 +270,7 @@ function recapStrategy(value: string): RecapContextStrategy {
 }
 
 function recapContextFormat(value: string): RecapContextFormat {
-  if (value === "yaml" || value === "toon") return value;
+  if (value === "yaml" || value === "yaml-anchors" || value === "toon") return value;
   throw new Error(`unknown recap context format: ${value}`);
 }
 

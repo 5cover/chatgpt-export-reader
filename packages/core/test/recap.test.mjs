@@ -9,6 +9,7 @@ import {
   deriveAnalyticsMetrics,
   serializeRecapToon,
   serializeRecapYaml,
+  serializeRecapYamlWithAnchors,
 } from "../dist/index.js";
 
 const at = (day, hour = 0, minute = 0) => Date.UTC(2026, 0, day, hour, minute);
@@ -176,6 +177,38 @@ test("YAML and TOON serialize compact ID-keyed evidence equivalently", () => {
     /unknown recap context format/,
   );
 });
+
+test('YAML serialization preserves YAML 1.1 boolean-like text as strings', () => {
+  const source = [chat('one', [
+    message('one', 'user', 'yes', at(1)),
+    message('two', 'user', 'no', at(1, 1)),
+    message('three', 'user', 'on', at(1, 2)),
+  ])]
+  const yaml = serializeRecapYaml(buildRecap(source))
+  const parsed = parse(yaml)
+  const conversation = Object.values(parsed.conversations)[0]
+  const selected = Object.values(conversation.messages).map(message => message.text)
+
+  assert.deepEqual(selected, ['yes', 'no', 'on'])
+  assert.match(yaml, /text: 'yes'/)
+  assert.match(yaml, /text: 'no'/)
+  assert.match(yaml, /text: 'on'/)
+  assert.match(yaml, /\nselection:\n {2}timezone:/)
+})
+
+test('anchored YAML interns repeated structures and preserves the parsed context', () => {
+  const source = [chat('one', [
+    message('first', 'user', 'same prompt', at(1)),
+    message('second', 'user', 'same prompt', at(1, 1)),
+  ])]
+  const recap = buildRecap(source)
+  const yaml = serializeRecapYamlWithAnchors(recap)
+  const parsed = parse(yaml)
+
+  assert.match(yaml, /&a\d+/)
+  assert.match(yaml, /\*a\d+/)
+  assert.deepEqual(parsed, parse(serializeRecapYaml(recap)))
+})
 
 test("compact evidence maps retain numeric message parent references", () => {
   const root = message("message-guid-root-0123456789", "user", "parent", at(1), [

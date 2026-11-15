@@ -8,7 +8,7 @@ Browser-safe primitives for normalizing ChatGPT v1 conversation records and calc
 npm install @chatgpt-export-reader/core
 ```
 
-The package supports Node.js 20 or later and browser bundlers.
+The package supports Node.js 22 or later and browser bundlers.
 
 ## Usage
 

@@ -12,6 +12,7 @@ import {
   normalizeV1Chat,
   serializeRecapToon,
   serializeRecapYaml,
+  serializeRecapYamlWithAnchors,
   type Chat,
   type RepeatedPhraseAnalysis,
   type TemporalMessageSlice,
@@ -162,13 +163,17 @@ async function handle(request: WorkerRequest): Promise<void> {
         ...request.settings,
         context: { strategy: request.settings.contextStrategy, maxMessages: request.settings.contextMessages },
       })
-      const content =
-        request.settings.contextFormat === 'yaml' ? serializeRecapYaml(document) : serializeRecapToon(document)
+      const content = request.settings.contextFormat === 'yaml'
+        ? serializeRecapYaml(document)
+        : request.settings.contextFormat === 'yaml-anchors'
+          ? serializeRecapYamlWithAnchors(document)
+          : serializeRecapToon(document)
+      const contentType = request.settings.contextFormat === 'toon' ? 'text/plain' : 'text/yaml'
       post({
         type: request.type,
         requestId,
         contextFormat: request.settings.contextFormat,
-        context: new Blob([content], { type: request.settings.contextFormat === 'yaml' ? 'text/yaml' : 'text/plain' }),
+        context: new Blob([content], { type: contentType }),
       })
       return
     }

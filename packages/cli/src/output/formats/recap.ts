@@ -3,6 +3,7 @@ import {
   createRecapPrompt,
   serializeRecapToon,
   serializeRecapYaml,
+  serializeRecapYamlWithAnchors,
   type RecapContextFormat,
   type RecapOptions,
 } from "@chatgpt-export-reader/core";
@@ -20,11 +21,14 @@ export default class RecapOutput implements OutputFormat {
     for await (const chat of chats) source.push(chat);
     const document = buildRecap(source, this.options);
     const root = artifactTree();
-    const contextName = `recap-context.${this.contextFormat}`;
+    const extension = this.contextFormat === "yaml-anchors" ? "yaml" : this.contextFormat;
+    const contextName = `recap-context.${extension}`;
     const context =
       this.contextFormat === "yaml"
         ? serializeRecapYaml(document)
-        : serializeRecapToon(document);
+        : this.contextFormat === "yaml-anchors"
+          ? serializeRecapYamlWithAnchors(document)
+          : serializeRecapToon(document);
     root.set(contextName, context);
     root.set(
       "recap-prompt.md",

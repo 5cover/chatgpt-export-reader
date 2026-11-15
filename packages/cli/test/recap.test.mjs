@@ -62,6 +62,31 @@ test("recap emits TOON context and updates its prompt", async () => {
   }
 });
 
+test("recap emits anchored YAML with a YAML file extension", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chatgpt-recap-cli-"));
+  try {
+    const input = join(directory, "conversations.json");
+    const output = join(directory, "out");
+    await writeFile(input, JSON.stringify([fixture("included")]), "utf8");
+
+    await run([
+      "recap",
+      input,
+      "--export-format", "filesystem",
+      "--fs-path", output,
+      "--context-format", "yaml-anchors",
+    ]);
+    assert.deepEqual((await readdir(output)).sort(), ["recap-context.yaml", "recap-prompt.md"]);
+    const context = await readFile(join(output, "recap-context.yaml"), "utf8");
+    const prompt = await readFile(join(output, "recap-prompt.md"), "utf8");
+    assert.match(context, /&a\d+/);
+    assert.match(context, /\*a\d+/);
+    assert.match(prompt, /YAML with anchors/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("recap CLI reports invalid scoped options", async () => {
   await assert.rejects(
     run(["recap", "ignored.json", "--recap-style", "narrative"]),

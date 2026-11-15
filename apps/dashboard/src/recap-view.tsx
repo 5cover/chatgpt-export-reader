@@ -13,6 +13,7 @@ import { useProjectNames, readProjectNames } from './project-identity.js'
 import { CopyButton, Status } from './ui.js'
 import { formatByteSize } from './format.js'
 const descriptions: Record<RecapPromptModule, string> = {
+  context: 'Documents the evidence schema and shared YAML anchor references. Always included.',
   interpretation: 'Develop a reflective account rather than a factual inventory. Omit for a simple activity list.',
   investigation: 'Test hypotheses, exceptions, and competing explanations. Omit for a quick recap.',
   interaction: 'Trace methods, feedback loops, and collaboration. Omit for topic-only coverage.',
@@ -42,6 +43,7 @@ export function RecapView({
   const [messages, setMessages] = useState(20)
   const [format, setFormat] = useState<RecapContextFormat>('yaml')
   const [modules, setModules] = useState<RecapPromptModule[]>([
+    'context',
     'interpretation',
     'investigation',
     'interaction',
@@ -227,6 +229,7 @@ export function RecapView({
           Evidence format
           <select value={format} onChange={event => setFormat(event.currentTarget.value as RecapContextFormat)}>
             <option value="yaml">YAML</option>
+            <option value="yaml-anchors">YAML with anchors</option>
             <option value="toon">TOON</option>
           </select>
         </label>
@@ -242,8 +245,8 @@ export function RecapView({
       </form>
       <div class="recap-artifact" aria-live="polite">
         {artifact && (
-          <a class="ui-button" href={artifact.url} download={`recap-context.${artifact.format}`}>
-            Download recap-context.{artifact.format} ({formatByteSize(artifact.size)})
+          <a class="ui-button" href={artifact.url} download={`recap-context.${artifact.format === 'yaml-anchors' ? 'yaml' : artifact.format}`}>
+            Download recap-context.{artifact.format === 'yaml-anchors' ? 'yaml' : artifact.format} ({formatByteSize(artifact.size)})
           </a>
         )}
         {generating && <p role="status">Building the scoped evidence file...</p>}
@@ -257,13 +260,14 @@ export function RecapView({
             combination needs to produce one unified output.
           </p>
           {recapPromptModules.map(module => {
-            const label = module === 'room' ? 'Room portrait' : module[0]!.toUpperCase() + module.slice(1)
+            const label = module === 'room' ? 'Room portrait' : module === 'context' ? 'Context format' : module[0]!.toUpperCase() + module.slice(1)
             return (
               <div class="recap-module" key={module}>
                 <input
                   type="checkbox"
                   id={`${id}-input-${module}`}
                   checked={modules.includes(module)}
+                  disabled={module === 'context'}
                   aria-describedby={`${id}-${module}`}
                   onChange={event =>
                     setModules(

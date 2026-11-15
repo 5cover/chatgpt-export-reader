@@ -20,7 +20,7 @@
   },
   "homepage": "https://github.com/5cover/chatgpt-export-reader#readme",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "type": "module",
   "main": "./dist/cli.js",

@@ -57,6 +57,7 @@ export {
   type RecapPromptModule,
   serializeRecapToon,
   serializeRecapYaml,
+  serializeRecapYamlWithAnchors,
   type RecapContextFormat,
   type RecapContextStrategy,
   type RecapConversationEvidence,

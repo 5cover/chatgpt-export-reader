@@ -1,5 +1,7 @@
 import { encode } from '@toon-format/toon'
-import { stringify } from 'yaml'
+import { intern } from 'interner'
+import { parse, Scalar, stringify } from 'yaml'
+import * as z from 'zod'
 import {
   collectAnalytics,
   collectRepeatedPhrases,
@@ -12,7 +14,7 @@ import { deriveAnalyticsMetrics, type AnalyticsDerivedMetrics, type Distribution
 import type { Chat, Message } from './types.js'
 
 export type RecapContextStrategy = 'full' | 'rolling-window'
-export type RecapContextFormat = 'yaml' | 'toon'
+export type RecapContextFormat = 'yaml' | 'yaml-anchors' | 'toon'
 
 export type RecapOptions = AnalyticsOptions & {
   projectNames?: Readonly<Record<string, string>>
@@ -70,6 +72,66 @@ export type RecapDocument = {
   metrics: RecapDerivedMetrics
   conversations: RecapConversationEvidence[]
 }
+
+const recapDocumentSchema = z.object({
+  schema: z.literal('chatgpt-export-reader/recap/v1'),
+  selection: z.object({
+    timezone: z.string(),
+    requestedDateRange: z.object({ startDate: z.string(), endDate: z.string() }),
+    resolvedDateRange: z.object({ startDate: z.string(), endDate: z.string() }),
+    context: z.object({ strategy: z.enum(['full', 'rolling-window']), maxMessages: z.number().int().nonnegative() }),
+    repeatedPhrases: z.object({ minimumScorePercentile: z.number().min(0).max(100) }),
+  }),
+  analytics: z.custom<RecapDocument['analytics']>(value => value !== null && typeof value === 'object' && !Array.isArray(value)),
+  metrics: z.custom<RecapDerivedMetrics>(value => value !== null && typeof value === 'object' && !Array.isArray(value)),
+  conversations: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    projectId: z.string().optional(),
+    projectName: z.string().optional(),
+    omittedUntimestampedMessages: z.number().int().nonnegative(),
+    preWindowContext: z.array(z.union([
+      z.object({ id: z.string(), parentId: z.string(), branchPath: z.string(), role: z.string(), at: z.string(), text: z.string(), textMetrics: z.object({ characters: z.number(), words: z.number() }) }),
+      z.object({ kind: z.literal('omission'), skippedMessages: z.number().int().nonnegative(), reason: z.literal('rolling-window') }),
+    ])),
+    messages: z.array(z.object({
+      id: z.string(), parentId: z.string(), branchPath: z.string(), role: z.string(), at: z.string(), text: z.string(),
+      textMetrics: z.object({ characters: z.number(), words: z.number() }), model: z.string().optional(), weight: z.number().optional(), thoughts: z.array(z.object({ summary: z.string(), content: z.string(), chunks: z.array(z.string()) })).optional(),
+    })),
+  })),
+})
+
+const recapContextSchema = z.object({
+  schema: z.literal('chatgpt-export-reader/recap/v1').describe('Format version for this recap context.'),
+  selection: z.object({
+    timezone: z.string().describe('Timezone used for the inclusive calendar-date selection.'),
+    requestedDateRange: z.object({ startDate: z.string(), endDate: z.string() }).describe('Requested bounds; an empty string means the bound was not specified.'),
+    resolvedDateRange: z.object({ startDate: z.string(), endDate: z.string() }).describe('Inclusive date bounds actually used.'),
+    context: z.object({ strategy: z.enum(['full', 'rolling-window']), maxMessages: z.number().int().nonnegative() }).describe('Policy for earlier context included before the selected range.'),
+    repeatedPhrases: z.object({ minimumScorePercentile: z.number().min(0).max(100) }).describe('Minimum retained repeated-phrase score percentile.'),
+  }),
+  analytics: z.record(z.string(), z.unknown()).describe('Aggregate statistics for in-range messages only. Each source Message object is counted once per conversation; repeated references to the same object are deduplicated. Conversation identifiers in analytics refer to source conversations; evidence identifiers below are compact document-local numeric keys.'),
+  metrics: z.record(z.string(), z.unknown()).describe('Derived summary measures calculated from analytics.'),
+  conversations: z.record(z.string(), z.object({
+    title: z.string().describe('Conversation title, which may be stale; use message text as the evidence of subject.'),
+    projectId: z.string().optional(),
+    projectName: z.string().optional(),
+    omittedUntimestampedMessages: z.number().int().nonnegative().describe('Messages without timestamps, excluded from date filtering and analytics.'),
+    preWindowContext: z.record(z.string(), z.union([
+      z.object({
+        at: z.string(), role: z.string(), text: z.string(), wc: z.string().describe('Word and character counts as two space-separated integers.'),
+        parentId: z.number().int().optional().describe('Numeric key of the parent message, when present.'), model: z.string().optional(), weight: z.number().optional(), thoughts: z.array(z.unknown()).optional(),
+      }),
+      z.object({ skippedMessages: z.number().int().nonnegative() }).describe('The _omitted entry marks a gap before retained context; skippedMessages quantifies the gap.'),
+    ])).describe('Earlier messages, keyed by compact numeric message ID, plus an optional _omitted gap record. Not activity in the selected date range.'),
+    messages: z.record(z.string(), z.object({
+      at: z.string(), role: z.string(), text: z.string(), wc: z.string().describe('Word and character counts as two space-separated integers.'),
+      parentId: z.number().int().optional().describe('Numeric key of the parent message; absent on root messages.'), model: z.string().optional(), weight: z.number().optional(), thoughts: z.array(z.unknown()).optional(),
+    })).describe('In-range messages keyed by compact numeric message ID in source-tree traversal order, not chronological order. Branches are reconstructed by following parentId.'),
+  })).describe('Conversation evidence keyed by compact numeric conversation ID. Message keys are unique within this document and parent references point to message keys.'),
+})
+
+const recapContextSchemaYaml = stringify(z.toJSONSchema(recapContextSchema), { indent: 2, lineWidth: 0 })
 
 type FlatMessage = {
   message: Message
@@ -135,7 +197,7 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
     minimumScorePercentile
   )
 
-  return {
+  const document = {
     schema: 'chatgpt-export-reader/recap/v1',
     selection: {
       timezone: timeZone,
@@ -149,7 +211,8 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
     conversations: source
       .map(chat => evidenceFor(chat, resolvedStart, resolvedEnd, timeZone, strategy, maxMessages, options.projectNames))
       .filter((conversation): conversation is RecapConversationEvidence => conversation !== undefined),
-  }
+  } satisfies z.output<typeof recapDocumentSchema>
+  return recapDocumentSchema.parse(document)
 }
 
 function filterRepeatedPhrases(
@@ -176,13 +239,23 @@ function filterRolePhrases<T extends { score: number }>(
 }
 
 export function serializeRecapYaml(document: RecapDocument): string {
-  const yaml = stringify(compactForTransport(document), {
-    indent: 1,
+  return serializeRecapYamlValue(compactForTransport(document), false)
+}
+
+export function serializeRecapYamlWithAnchors(document: RecapDocument): string {
+  return serializeRecapYamlValue(intern(prepareYamlInternGraph(compactForTransport(document))), true)
+}
+
+function serializeRecapYamlValue(value: unknown, aliasDuplicateObjects: boolean): string {
+  const yaml = stringify(preserveYamlBooleanStrings(restoreYamlMaps(value)), {
+    indent: 2,
     lineWidth: 0,
     blockQuote: true,
-    aliasDuplicateObjects: false,
+    aliasDuplicateObjects,
   })
-  return yaml.endsWith('\n') ? yaml : `${yaml}\n`
+  const output = yaml.endsWith('\n') ? yaml : `${yaml}\n`
+  recapContextSchema.parse(parse(output, { maxAliasCount: output.length }))
+  return output
 }
 
 export function serializeRecapToon(document: RecapDocument): string {
@@ -190,19 +263,20 @@ export function serializeRecapToon(document: RecapDocument): string {
   return toon.endsWith('\n') ? toon : `${toon}\n`
 }
 
-export type RecapPromptModule = 'interpretation' | 'investigation' | 'interaction' | 'temporal' | 'writing' | 'themes' | 'behavior' | 'friction' | 'prompting' | 'recommendations' | 'room'
-export const recapPromptModules: readonly RecapPromptModule[] = ['interpretation', 'investigation', 'interaction', 'temporal', 'writing', 'themes', 'behavior', 'friction', 'prompting', 'recommendations', 'room']
+export type RecapPromptModule = 'context' | 'interpretation' | 'investigation' | 'interaction' | 'temporal' | 'writing' | 'themes' | 'behavior' | 'friction' | 'prompting' | 'recommendations' | 'room'
+export const recapPromptModules: readonly RecapPromptModule[] = ['context', 'interpretation', 'investigation', 'interaction', 'temporal', 'writing', 'themes', 'behavior', 'friction', 'prompting', 'recommendations', 'room']
 
 export function createRecapPrompt(contextFormat: RecapContextFormat = 'yaml', modules?: readonly RecapPromptModule[]): string {
-  if (!['yaml', 'toon'].includes(contextFormat))
+  if (!['yaml', 'yaml-anchors', 'toon'].includes(contextFormat))
     throw new RangeError(`unknown recap context format: ${contextFormat}`)
   if (modules === undefined) return legacyRecapPrompt(contextFormat)
   const unknown = modules.find(module => !recapPromptModules.includes(module))
   if (unknown) throw new RangeError(`unknown recap module: ${unknown}`)
   const core = `# ChatGPT Usage Recap
 
-Treat the accompanying ${contextFormat.toUpperCase()} file as evidence. Its conversations, messages, and preWindowContext are chronological records keyed by numeric IDs, not arrays. Follow parentId to reconstruct branches. preWindowContext is earlier context, not activity in the selected period; _omitted marks missing history. Statistics support investigation but are not definitive descriptions of the user. Inspect specific conversations before drawing conclusions, distinguish observation from inference, and do not invent unsupported traits.\n\n`
+Treat the accompanying ${contextFormatName(contextFormat)} file as evidence. Its conversations, messages, and preWindowContext are ordered records keyed by numeric IDs, not arrays; evidence message order follows source-tree traversal, not chronological order. Follow parentId to reconstruct branches. preWindowContext is earlier context, not activity in the selected period; _omitted marks missing history. Statistics support investigation but are not definitive descriptions of the user. Inspect specific conversations before drawing conclusions, distinguish observation from inference, and do not invent unsupported traits.\n\n`
   const additions: Partial<Record<RecapPromptModule, string>> = {
+    context: contextFormatPrompt(),
     themes: '## Recurring themes\nIdentify distinctive recurring subjects and projects, supported by concrete examples. Explain meaningful changes rather than producing only frequency rankings.',
     behavior: '## Interaction patterns\nTrace repeated behaviors by the user or assistant, including revisions, feedback loops, and changes in working method. Distinguish what conversations concern from how ChatGPT is used.',
     friction: '## Friction points\nIdentify recurrent misunderstandings, corrections, abandoned approaches, or costly loops. Include counterexamples and avoid inferring frustration without evidence.',
@@ -218,22 +292,44 @@ Treat the accompanying ${contextFormat.toUpperCase()} file as evidence. Its conv
     temporal: ['Temporal interpretation', 'Usage intensity and time'],
     writing: ['Selecting what deserves inclusion', 'Writing the recap', 'Final objective'],
   }
-  return core + recapPromptModules.filter(module => modules.includes(module)).map(module => {
+  return core + analysisProcedurePrompt() + '\n\n' + recapPromptModules.filter(module => module === 'context' || modules.includes(module)).map(module => {
     const headings = groups[module]
     return headings ? sections.filter(section => headings.some(heading => section.startsWith(`## ${heading}\n`))).join('\n') : additions[module]
   }).join('\n\n') + '\n'
 }
 
+function contextFormatPrompt(): string {
+  return `## Context format
+
+The following JSON Schema is the contract for the attached context. YAML record keys may be numeric; treat them as identifiers, not list indexes. Compact message IDs are document-local and reused by parent references. The \`messages\` records contain selected-range evidence in source-tree traversal order, not chronological order; \`preWindowContext\` contains earlier evidence and an optional \`_omitted\` count marking missing history. The analytics section describes only selected-range messages and counts each source message object once per conversation. YAML anchors and aliases mark shared equivalent structures, not duplicate conversations or messages. The \`wc\` scalar contains word count followed by character count.
+
+\`\`\`yaml
+${recapContextSchemaYaml.trimEnd()}
+\`\`\``
+}
+
+function analysisProcedurePrompt(): string {
+  return `## Analysis procedure
+
+Understand the schema and selection metadata first. Establish the export's date coverage and identify missing context, including \`preWindowContext._omitted\` and untimestamped-message counts. Before forming an interpretation, review user messages across every conversation in the selected range and build a coverage inventory; do not choose a few conversations arbitrarily and generalize from them. Then inspect assistant replies, preceding context, and branch paths selectively to understand relevant exchanges, keeping user-authored activity distinct from assistant output.
+
+If the context is too large to inspect directly, use available tools to partition it into manageable temporary views, initially by conversation and then at message boundaries as needed. Preserve message IDs and parent references, and process every partition before deciding what matters; arbitrary sampling is not a substitute for coverage. Revisit source passages that support important conclusions, check for counterexamples, and distinguish observation from inference.`
+}
+
 function legacyRecapPrompt(contextFormat: RecapContextFormat): string {
   return `# ChatGPT Usage Recap: Investigator Prompt
 
-- Treat the accompanying ${contextFormat.toUpperCase()} document as evidence.
+- Treat the accompanying ${contextFormatName(contextFormat)} document as evidence.
 - Distinguish \`preWindowContext\` from in-range \`messages\`.
 - Use statistics as signals, never as absolute personality claims.
 
 ## Evidence layout
 
-Serialized \`conversations\`, \`messages\`, and \`preWindowContext\` are ordered records keyed by compact numeric IDs, not arrays. Record insertion order is chronological. Message IDs are their record keys; numeric \`parentId\` values reconstruct branches, and root messages omit \`parentId\`. \`preWindowContext._omitted\` marks a rolling-window gap and gives its skipped-message count. Analytics hour cells are sparse, so an absent cell has neither messages nor session starts. Repeated phrases are filtered for recap export at the percentile recorded in \`selection.repeatedPhrases\`.
+Serialized \`conversations\`, \`messages\`, and \`preWindowContext\` are ordered records keyed by compact numeric IDs, not arrays. Evidence message order follows source-tree traversal, not chronological order. Numeric \`parentId\` values reconstruct branches, and root messages omit \`parentId\`. \`preWindowContext._omitted\` marks a rolling-window gap and gives its skipped-message count. Analytics count each source message object once per conversation; repeated references to the same object are deduplicated. Analytics hour cells are sparse, so an absent cell has neither messages nor session starts. Repeated phrases are filtered for recap export at the percentile recorded in \`selection.repeatedPhrases\`.
+
+${contextFormatPrompt()}
+
+${analysisProcedurePrompt()}
 
 ## Goals and non-goals
 
@@ -836,4 +932,90 @@ function isEmptyTextMetrics(value: unknown): value is TextMetrics {
 
 function isIdentifierKey(key: string): key is 'id' | 'parentId' | 'conversationId' {
   return key === 'id' || key === 'parentId' || key === 'conversationId'
+}
+
+const yamlMapMarker = Symbol('yaml-map')
+
+function prepareYamlInternGraph(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
+  if (value === null || typeof value !== 'object') return value
+  const existing = seen.get(value)
+  if (existing !== undefined) return existing
+  if (Array.isArray(value)) {
+    const output: unknown[] = []
+    seen.set(value, output)
+    output.push(...value.map(child => prepareYamlInternGraph(child, seen)))
+    return output
+  }
+  const output = Object.create(value instanceof Map ? null : Reflect.getPrototypeOf(value)) as Record<PropertyKey, unknown>
+  seen.set(value, output)
+  if (value instanceof Map) {
+    Object.defineProperty(output, yamlMapMarker, { value: true, enumerable: true })
+    for (const [key, child] of value) {
+      Object.defineProperty(output, String(key), {
+        value: prepareYamlInternGraph(child, seen), enumerable: true, writable: true, configurable: true,
+      })
+    }
+  } else {
+    for (const [key, child] of Object.entries(value)) {
+      Object.defineProperty(output, key, {
+        value: prepareYamlInternGraph(child, seen), enumerable: true, writable: true, configurable: true,
+      })
+    }
+  }
+  return output
+}
+
+function restoreYamlMaps(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
+  if (value === null || typeof value !== 'object') return value
+  const existing = seen.get(value)
+  if (existing !== undefined) return existing
+  if (Array.isArray(value)) {
+    const output: unknown[] = []
+    seen.set(value, output)
+    output.push(...value.map(child => restoreYamlMaps(child, seen)))
+    return output
+  }
+  if (value instanceof Map) {
+    const output = new Map<unknown, unknown>()
+    seen.set(value, output)
+    for (const [key, child] of value) output.set(key, restoreYamlMaps(child, seen))
+    return output
+  }
+  const isMap = Object.hasOwn(value, yamlMapMarker)
+  const output: Record<PropertyKey, unknown> | Map<string | number, unknown> = isMap
+    ? new Map()
+    : Object.create(Reflect.getPrototypeOf(value)) as Record<PropertyKey, unknown>
+  seen.set(value, output)
+  for (const [key, child] of Object.entries(value)) {
+    const restored = restoreYamlMaps(child, seen)
+    if (output instanceof Map) {
+      output.set(/^(?:0|[1-9]\d*)$/u.test(key) ? Number(key) : key, restored)
+    } else {
+      Object.defineProperty(output, key, { value: restored, enumerable: true, writable: true, configurable: true })
+    }
+  }
+  return output
+}
+
+function preserveYamlBooleanStrings(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (typeof value === 'string' && /^(?:y|yes|n|no|true|false|on|off)$/iu.test(value)) {
+    const scalar = new Scalar(value)
+    scalar.type = Scalar.QUOTE_SINGLE
+    return scalar
+  }
+  if (value === null || typeof value !== 'object' || value instanceof Scalar || seen.has(value)) return value
+  seen.add(value)
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) value[index] = preserveYamlBooleanStrings(value[index], seen)
+  } else if (value instanceof Map) {
+    for (const [key, child] of value) value.set(key, preserveYamlBooleanStrings(child, seen))
+  } else {
+    for (const [key, child] of Object.entries(value))
+      Object.defineProperty(value, key, { value: preserveYamlBooleanStrings(child, seen), enumerable: true, writable: true, configurable: true })
+  }
+  return value
+}
+
+function contextFormatName(format: RecapContextFormat): string {
+  return format === 'yaml-anchors' ? 'YAML with anchors' : format.toUpperCase()
 }

@@ -9,7 +9,7 @@ transcripts, usage statistics, or recap evidence for an LLM.
 npm install --global chatgpt-export-reader
 ```
 
-The CLI requires Node.js 20 or later.
+The CLI requires Node.js 22 or later.
 
 ## Usage
 
