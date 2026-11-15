@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import { strict as assert } from 'node:assert'
-import { createRecapPrompt } from '../dist/index.js'
+import { createRecapPrompt, recapPromptModuleDefinitions, recapPromptModules } from '../dist/index.js'
 
 test('selected modules follow fixed order and do not duplicate the evidence core', () => {
   const prompt = createRecapPrompt('yaml', ['room', 'themes'])
@@ -26,4 +26,11 @@ test('context format schema is always present and cannot be deselected', () => {
   assert.ok(prompt.includes('## Analysis procedure'))
   assert.ok(prompt.includes('every partition'))
   assert.match(createRecapPrompt('yaml-anchors', []), /YAML with anchors file/)
+})
+
+test('prompt module keys and dashboard descriptions come from one complete definition', () => {
+  assert.deepEqual(recapPromptModules, Object.keys(recapPromptModuleDefinitions))
+  assert.equal(new Set(recapPromptModules).size, recapPromptModules.length)
+  assert.ok(recapPromptModules.every(module => recapPromptModuleDefinitions[module].description.length > 0))
+  assert.match(recapPromptModuleDefinitions.analysis.prompt, /## Use tools to investigate the data/)
 })

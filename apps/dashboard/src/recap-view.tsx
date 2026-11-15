@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'preact/hooks'
 import {
   createRecapPrompt,
   recapPromptModules,
+  recapPromptModuleDefinitions,
   type RecapContextFormat,
   type RecapContextStrategy,
   type RecapPromptModule,
@@ -12,21 +13,6 @@ import { TimeZoneSelect } from './scope-controls.js'
 import { useProjectNames, readProjectNames } from './project-identity.js'
 import { CopyButton, Status } from './ui.js'
 import { formatByteSize } from './format.js'
-const descriptions: Record<RecapPromptModule, string> = {
-  context: 'Documents the evidence schema and shared YAML anchor references. Always included.',
-  interpretation: 'Develop a reflective account rather than a factual inventory. Omit for a simple activity list.',
-  investigation: 'Test hypotheses, exceptions, and competing explanations. Omit for a quick recap.',
-  interaction: 'Trace methods, feedback loops, and collaboration. Omit for topic-only coverage.',
-  temporal: 'Explain changes over time. Omit when the period is too brief to establish change.',
-  writing: 'Shape findings into a coherent written story. Omit for lists or image-only output.',
-  themes: 'Identify recurring subjects and projects. Omit when topics are not the focus.',
-  behavior: 'Find repeated user and assistant moves. Omit for a subject-only summary.',
-  friction:
-    'Investigate corrections and costly loops without assuming frustration. Omit if these are outside your purpose.',
-  prompting: 'Examine languages, formats, and instruction habits. Omit if prompt craft is irrelevant.',
-  recommendations: 'Suggest evidence-based workflow alternatives and their tradeoffs. Omit for a descriptive recap.',
-  room: 'Generate a visual room portrait. Attach a room image to preserve its architecture, or allow a new room. Omit for text-only output.',
-}
 export function RecapView({
   scope,
   client,
@@ -279,7 +265,7 @@ export function RecapView({
                   <label htmlFor={`${id}-input-${module}`}>
                     <strong>{label}</strong>
                   </label>
-                  <small id={`${id}-${module}`}>{descriptions[module]}</small>
+                  <small id={`${id}-${module}`}>{recapPromptModuleDefinitions[module].description}</small>
                 </span>
               </div>
             )
