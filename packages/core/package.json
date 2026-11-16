@@ -1,6 +1,6 @@
 {
   "name": "@stemmatic/core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "ChatGPT export normalization and usage statistics.",
   "keywords": [
     "chatgpt",

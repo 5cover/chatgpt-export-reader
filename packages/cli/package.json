@@ -1,6 +1,6 @@
 {
   "name": "stemmatic",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Turn ChatGPT exports into Markdown, prompt, JSON, and statistics artifacts.",
   "keywords": [
     "chatgpt",
@@ -43,8 +43,8 @@
   "license": "MIT",
   "dependencies": {
     "@5cover/moremaps": "^1.1.0",
-    "@stemmatic/core": "workspace:*",
     "@commander-js/extra-typings": "^14.0.0",
+    "@stemmatic/core": "workspace:*",
     "commander": "^14.0.2",
     "remark": "^15.0.1",
     "remark-parse": "^11.0.0",

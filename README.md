@@ -1,5 +1,7 @@
 # Stemmatic
 
+(formerly chatgpt-export-reader)
+
 <https://5cover.github.io/stemmatic/>
 
 Turns ChatGPT data exports into Markdown documents for easy browsing.
