@@ -1,3 +1,4 @@
+import { intern } from 'interner'
 import { stringify } from 'yaml'
 import * as z from 'zod'
 
@@ -96,4 +97,8 @@ export const recapContextSchema = z.object({
     ),
 })
 
-export const recapContextSchemaYaml = stringify(z.toJSONSchema(recapContextSchema), { indent: 2, lineWidth: 0 })
+export const recapContextSchemaYaml = stringify(intern(z.toJSONSchema(recapContextSchema)), {
+  indent: 2,
+  lineWidth: 0,
+  aliasDuplicateObjects: true,
+})
