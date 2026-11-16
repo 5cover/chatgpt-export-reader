@@ -9,7 +9,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { strToU8, zipSync } from 'fflate'
 import { syntheticExport } from './fixtures.mjs'
 const directory = fileURLToPath(new URL('..', import.meta.url))
-const baseURL = `http://127.0.0.1:4178${process.env.GITHUB_ACTIONS ? '/chatgpt-export-reader/' : '/'}`
+const baseURL = `http://127.0.0.1:4178${process.env.GITHUB_ACTIONS ? '/stemmatic/' : '/'}`
 let server, browser, context, page
 let errors = []
 before(async () => {
@@ -175,7 +175,7 @@ test(
   async () => {
     await page.evaluate(() =>
       localStorage.setItem(
-        'chatgpt-export-reader/project-names/v1',
+        'stemmatic/project-names/v1',
         JSON.stringify({ 'project-research': 'Research', invalid: 'x'.repeat(201) })
       )
     )

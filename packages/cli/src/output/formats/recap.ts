@@ -6,7 +6,7 @@ import {
   serializeRecapYamlWithAnchors,
   type RecapContextFormat,
   type RecapOptions,
-} from "@chatgpt-export-reader/core";
+} from "@stemmatic/core";
 import type { ArtifactTree, Chat, OutputFormat } from "../../types.js";
 import { artifactTree } from "../artifact-tree.js";
 

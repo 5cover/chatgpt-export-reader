@@ -1,5 +1,5 @@
 {
-  "name": "@chatgpt-export-reader/core",
+  "name": "@stemmatic/core",
   "version": "1.0.0",
   "description": "ChatGPT export normalization and usage statistics.",
   "keywords": [
@@ -13,13 +13,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/5cover/chatgpt-export-reader.git",
+    "url": "git+https://github.com/5cover/stemmatic.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/5cover/chatgpt-export-reader/issues"
+    "url": "https://github.com/5cover/stemmatic/issues"
   },
-  "homepage": "https://github.com/5cover/chatgpt-export-reader#readme",
+  "homepage": "https://github.com/5cover/stemmatic#readme",
   "engines": {
     "node": ">=22"
   },

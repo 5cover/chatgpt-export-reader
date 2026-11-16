@@ -1,4 +1,4 @@
-import type { TimingStatistics } from '@chatgpt-export-reader/core'
+import type { TimingStatistics } from '@stemmatic/core'
 import { formatDuration } from './format.js'
 import { Disclosure } from './ui.js'
 export function Methodology({ timing }: { timing: TimingStatistics }) {

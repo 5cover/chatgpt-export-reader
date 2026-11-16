@@ -1,11 +1,11 @@
-# @chatgpt-export-reader/core
+# @stemmatic/core
 
 Browser-safe primitives for normalizing ChatGPT v1 conversation records and calculating usage statistics. It has no Node filesystem or stream dependencies.
 
 ## Install
 
 ```sh
-npm install @chatgpt-export-reader/core
+npm install @stemmatic/core
 ```
 
 The package supports Node.js 22 or later and browser bundlers.
@@ -16,7 +16,7 @@ The package supports Node.js 22 or later and browser bundlers.
 import {
   normalizeV1Chat,
   UsageStatsAccumulator,
-} from "@chatgpt-export-reader/core";
+} from "@stemmatic/core";
 
 const accumulator = new UsageStatsAccumulator("UTC");
 accumulator.addChat(normalizeV1Chat(rawConversation));
@@ -37,7 +37,7 @@ const accumulator = new UsageStatsAccumulator({
 For text-volume, temporal, and session analytics, use `collectAnalytics`. It counts literal normalized message bodies locally, separates user input from assistant output, and returns daily, weekday-hour, conversation, and observed-session aggregates.
 
 ```ts
-import { collectAnalytics } from "@chatgpt-export-reader/core";
+import { collectAnalytics } from "@stemmatic/core";
 
 const analytics = collectAnalytics(chats, {
   timeZone: "Europe/Paris",
@@ -50,7 +50,7 @@ const analytics = collectAnalytics(chats, {
 `deriveAnalyticsMetrics` turns canonical analytics into shared presentation metrics: daily means and medians, prompt distributions, output concentration, and session profile metrics. Session starts are a sparse hour-keyed record containing only hours with starts. The dashboard and recap builder consume this API, so their reported values stay aligned.
 
 ```ts
-import { deriveAnalyticsMetrics } from "@chatgpt-export-reader/core";
+import { deriveAnalyticsMetrics } from "@stemmatic/core";
 
 const metrics = deriveAnalyticsMetrics(analytics, { timeZone: "Europe/Paris" });
 ```
@@ -58,7 +58,7 @@ const metrics = deriveAnalyticsMetrics(analytics, { timeZone: "Europe/Paris" });
 Use `collectTemporalMessageSlice` to inspect the user or assistant messages behind a weekday-hour aggregate. Omit `weekday` to match that hour on every day. The result includes conversation rollups and matching message evidence; paginate the `messages` array before sending large slices across a process or Worker boundary.
 
 ```ts
-import { collectTemporalMessageSlice } from "@chatgpt-export-reader/core";
+import { collectTemporalMessageSlice } from "@stemmatic/core";
 
 const slice = collectTemporalMessageSlice(
   chats,
@@ -72,7 +72,7 @@ const slice = collectTemporalMessageSlice(
 `buildRecap` creates a portable evidence document for an LLM recap. It keeps the selected range separate from optional preceding context, so its analytics never include context messages.
 
 ```ts
-import { buildRecap, createRecapPrompt, serializeRecapYaml } from "@chatgpt-export-reader/core";
+import { buildRecap, createRecapPrompt, serializeRecapYaml } from "@stemmatic/core";
 
 const recap = buildRecap(chats, {
   timeZone: "Europe/Paris",

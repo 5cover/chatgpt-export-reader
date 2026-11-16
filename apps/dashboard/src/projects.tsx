@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks'
-import type { AnalyticsStatistics } from '@chatgpt-export-reader/core'
+import type { AnalyticsStatistics } from '@stemmatic/core'
 import { ProjectNameEditor, projectNamesKey, projectRoute, useProjectNames, validNames } from './project-identity.js'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
 import { Choice, FileButton, TextValue } from './ui.js'

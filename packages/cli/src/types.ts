@@ -1,6 +1,6 @@
-import type { Chat } from "@chatgpt-export-reader/core";
+import type { Chat } from "@stemmatic/core";
 
-export type { Chat, Message, Thought } from "@chatgpt-export-reader/core";
+export type { Chat, Message, Thought } from "@stemmatic/core";
 
 export type ArtifactTree = Map<string, string | ArtifactTree>;
 

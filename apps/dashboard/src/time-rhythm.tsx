@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks'
-import { deriveAnalyticsMetrics, type AnalyticsStatistics } from '@chatgpt-export-reader/core'
+import { deriveAnalyticsMetrics, type AnalyticsStatistics } from '@stemmatic/core'
 import { Choice, Disclosure } from './ui.js'
 import { DailySeriesChart } from './daily-series-chart.js'
 import { dailyValues, measures, type Measure } from './metric-definitions.js'

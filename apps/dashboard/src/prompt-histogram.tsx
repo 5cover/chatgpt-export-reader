@@ -1,4 +1,4 @@
-import type { PromptDistributionBin } from '@chatgpt-export-reader/core'
+import type { PromptDistributionBin } from '@stemmatic/core'
 
 export function PromptHistogram({ bins }: { bins: readonly PromptDistributionBin[] }) {
   const largestBin = Math.max(...bins.map(bin => bin.days), 1)

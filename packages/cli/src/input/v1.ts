@@ -1,4 +1,4 @@
-import { isEmptyV1Record, normalizeV1Chat } from "@chatgpt-export-reader/core";
+import { isEmptyV1Record, normalizeV1Chat } from "@stemmatic/core";
 import * as fs from "fs";
 import * as path from "path";
 import chain from "stream-chain";

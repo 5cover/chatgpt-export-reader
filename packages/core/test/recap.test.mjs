@@ -137,7 +137,7 @@ test("YAML and TOON serialize compact ID-keyed evidence equivalently", () => {
   const yaml = serializeRecapYaml(recap);
   const toon = serializeRecapToon(recap);
   const parsed = parse(yaml);
-  assert.equal(parsed.schema, "chatgpt-export-reader/recap/v1");
+  assert.equal(parsed.schema, "stemmatic/recap/v1");
   assert.match(yaml, /text: \|-\n/);
   assert.match(yaml, /sun 2026-10-11T10:30\+02:00/);
   assert.match(yaml, /wc: 4 22/);

@@ -23,10 +23,10 @@ Keep personal exports and generated output outside source and version control.
 - `pnpm lint` - run strict ESLint checks across all workspace code, tests, and tooling, including dashboard CSS and HTML.
 - `pnpm lint:fix` - apply automatic ESLint fixes across the workspace.
 - `pnpm test:lint` - verify lint rule enforcement and ignored paths.
-- `pnpm --filter @chatgpt-export-reader/dashboard test` - run dashboard interaction and accessibility regressions using Playwright-managed Chromium. Set `BROWSER_PATH` to override the browser executable; install Playwright's Chromium separately when needed. The test command does not download a browser.
+- `pnpm --filter @stemmatic/dashboard test` - run dashboard interaction and accessibility regressions using Playwright-managed Chromium. Set `BROWSER_PATH` to override the browser executable; install Playwright's Chromium separately when needed. The test command does not download a browser.
 - `node packages/cli/dist/cli.js` - run the built CLI.
 
-Use `pnpm build:all` before `pnpm lint` so workspace package declarations are available for type-aware linting. Run `pnpm test:lint`, `pnpm --filter @chatgpt-export-reader/core test`, and `pnpm --filter chatgpt-export-reader test` as the minimum validation before submitting changes. For dashboard behavior changes, also run the dashboard browser suite. It starts a localhost server and may need an environment that permits local sockets.
+Use `pnpm build:all` before `pnpm lint` so workspace package declarations are available for type-aware linting. Run `pnpm test:lint`, `pnpm --filter @stemmatic/core test`, and `pnpm --filter stemmatic test` as the minimum validation before submitting changes. For dashboard behavior changes, also run the dashboard browser suite. It starts a localhost server and may need an environment that permits local sockets.
 
 ## Coding Style & Naming Conventions
 

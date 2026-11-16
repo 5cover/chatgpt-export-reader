@@ -10,7 +10,7 @@ import type {
   TemporalMessageFilter,
   TemporalMessageSlice,
   TurnPage,
-} from '@chatgpt-export-reader/core'
+} from '@stemmatic/core'
 import type { AnalysisScope, Period } from './analysis-scope.js'
 export type ImportSource = { kind: 'folder'; files: File[] } | { kind: 'zip'; archive: File }
 export type ImportDiagnostic = { file: string; record: number; reason: string }

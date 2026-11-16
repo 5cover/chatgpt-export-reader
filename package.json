@@ -1,13 +1,13 @@
 {
-  "name": "chatgpt-export-reader-workspace",
+  "name": "stemmatic-workspace",
   "private": true,
   "packageManager": "pnpm@12.18.0",
   "scripts": {
-    "build": "pnpm --filter @chatgpt-export-reader/core build && pnpm --filter chatgpt-export-reader build",
-    "build:dashboard": "pnpm --filter @chatgpt-export-reader/dashboard build",
+    "build": "pnpm --filter @stemmatic/core build && pnpm --filter stemmatic build",
+    "build:dashboard": "pnpm --filter @stemmatic/dashboard build",
     "build:all": "pnpm build && pnpm build:dashboard",
     "lint": "eslint . --max-warnings 0",
-    "publish:check": "pnpm build && pnpm --filter @chatgpt-export-reader/core check && pnpm --filter chatgpt-export-reader check && pnpm --filter @chatgpt-export-reader/core pack --dry-run --json && pnpm --filter chatgpt-export-reader pack --dry-run --json",
+    "publish:check": "pnpm build && pnpm --filter @stemmatic/core check && pnpm --filter stemmatic check && pnpm --filter @stemmatic/core pack --dry-run --json && pnpm --filter stemmatic pack --dry-run --json",
     "lint:fix": "pnpm lint --fix",
     "test:lint": "node --test test/lint.test.mjs"
   },

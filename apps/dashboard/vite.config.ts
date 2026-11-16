@@ -8,7 +8,7 @@ const browserInternerModules = {
 }
 
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/chatgpt-export-reader/' : '/',
+  base: process.env.GITHUB_ACTIONS ? '/stemmatic/' : '/',
   plugins: [preact()],
   resolve: { alias: browserInternerModules },
 })

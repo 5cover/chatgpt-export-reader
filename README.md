@@ -1,4 +1,6 @@
-# ChatGPT Export Reader
+# Stemmatic
+
+<https://5cover.github.io/stemmatic/>
 
 Turns ChatGPT data exports into Markdown documents for easy browsing.
 
@@ -8,8 +10,8 @@ Turns ChatGPT data exports into Markdown documents for easy browsing.
 pnpm build:all
 pnpm lint
 pnpm test:lint
-pnpm --filter @chatgpt-export-reader/core test
-pnpm --filter chatgpt-export-reader test
+pnpm --filter @stemmatic/core test
+pnpm --filter stemmatic test
 ```
 
 `pnpm lint` checks the entire workspace with zero warnings allowed: TypeScript and TSX source, JavaScript tests, tooling configuration, CSS, and HTML. Build first so workspace package declarations are available for type-aware linting. Each package also exposes `pnpm lint` for its own files; `pnpm lint:fix` at the root applies safe automatic fixes.
@@ -60,7 +62,7 @@ The browser dashboard is a local-only companion for investigating usage spikes. 
 
 ```sh
 pnpm install
-pnpm --filter @chatgpt-export-reader/dashboard dev
+pnpm --filter @stemmatic/dashboard dev
 ```
 
 Vite prints the local URL, normally `http://localhost:5173/`. Open it, choose the folder extracted from a ChatGPT export, and select the `conversations*.json` files through the folder picker. The importer ignores the remaining assets and processes data only in the browser.
@@ -69,7 +71,7 @@ To test the production build locally:
 
 ```sh
 pnpm build:dashboard
-pnpm --filter @chatgpt-export-reader/dashboard preview
+pnpm --filter @stemmatic/dashboard preview
 ```
 
 A shared analysis scope (inclusive period, timezone, optional project, and session definition) follows you through Overview, Time and rhythm, Projects, Conversations, and Recap. Overview compares equal-length periods and separates active-day frequency from depth. Charts have keyboard-accessible daily values; tables paginate large collections. Session and project links preserve a path to contributing conversations and on-demand message evidence. Repeated-language analysis runs on demand and links to matching word sequences. Recap evidence inherits the current scope unless explicitly overridden; prompt modules do not invalidate its download. The static dashboard deploys to GitHub Pages on pushes to `main`.
@@ -82,7 +84,7 @@ The dashboard also estimates daily interaction time from message lengths (40 wor
 pnpm build:all
 pnpm lint
 pnpm test:lint
-pnpm --filter @chatgpt-export-reader/dashboard test
+pnpm --filter @stemmatic/dashboard test
 ```
 
 Browser tests build and serve the production dashboard, then use `playwright-core` with the installed Chromium at `/usr/bin/chrome`. Set `BROWSER_PATH` to another installed executable. No browser is downloaded. The suite exercises synthetic ZIP exports, interaction regressions, worker recovery, responsive layouts, and rendered accessibility with axe. Set `DASHBOARD_ARTIFACT_DIR` to save viewport screenshots for visual review.

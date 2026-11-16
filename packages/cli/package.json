@@ -1,5 +1,5 @@
 {
-  "name": "chatgpt-export-reader",
+  "name": "stemmatic",
   "version": "1.0.0",
   "description": "Turn ChatGPT exports into Markdown, prompt, JSON, and statistics artifacts.",
   "keywords": [
@@ -12,20 +12,20 @@
   "author": "Scover",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/5cover/chatgpt-export-reader.git",
+    "url": "git+https://github.com/5cover/stemmatic.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/5cover/chatgpt-export-reader/issues"
+    "url": "https://github.com/5cover/stemmatic/issues"
   },
-  "homepage": "https://github.com/5cover/chatgpt-export-reader#readme",
+  "homepage": "https://github.com/5cover/stemmatic#readme",
   "engines": {
     "node": ">=22"
   },
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
-    "chatgpt-export-reader": "./dist/cli.js"
+    "stemmatic": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -37,13 +37,13 @@
     "lint": "eslint . --max-warnings 0",
     "test": "pnpm build && node --test test/*.test.mjs",
     "check": "pnpm lint && pnpm test",
-    "prepack": "pnpm --filter @chatgpt-export-reader/core build && pnpm build",
-    "prepublishOnly": "pnpm --filter @chatgpt-export-reader/core test && pnpm test"
+    "prepack": "pnpm --filter @stemmatic/core build && pnpm build",
+    "prepublishOnly": "pnpm --filter @stemmatic/core test && pnpm test"
   },
   "license": "MIT",
   "dependencies": {
     "@5cover/moremaps": "^1.1.0",
-    "@chatgpt-export-reader/core": "workspace:*",
+    "@stemmatic/core": "workspace:*",
     "@commander-js/extra-typings": "^14.0.0",
     "commander": "^14.0.2",
     "remark": "^15.0.1",

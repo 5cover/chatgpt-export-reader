@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks'
-import type { TemporalMessageFilter, TemporalMessageRole } from '@chatgpt-export-reader/core'
+import type { TemporalMessageFilter, TemporalMessageRole } from '@stemmatic/core'
 import type { WorkerClient } from './worker-client.js'
 import type { AnalysisScope } from './analysis-scope.js'
 import { useWorkerQuery } from './use-worker-query.js'

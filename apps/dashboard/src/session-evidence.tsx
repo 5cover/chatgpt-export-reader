@@ -1,4 +1,4 @@
-import type { SessionAnalytics } from '@chatgpt-export-reader/core'
+import type { SessionAnalytics } from '@stemmatic/core'
 import { SortableTable } from './sortable-table.js'
 import { TextValue } from './ui.js'
 import { formatDate, formatDuration } from './format.js'

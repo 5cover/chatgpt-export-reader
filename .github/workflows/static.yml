@@ -28,8 +28,8 @@ jobs:
       - run: pnpm build:all
       - run: pnpm lint
       - run: pnpm test:lint
-      - run: pnpm --filter @chatgpt-export-reader/core test
-      - run: pnpm --filter chatgpt-export-reader test
+      - run: pnpm --filter @stemmatic/core test
+      - run: pnpm --filter stemmatic test
       - name: Verify dashboard interactions and accessibility
         run: |
           dashboard_browser="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
@@ -37,7 +37,7 @@ jobs:
             echo "An installed Chromium is required; browser downloads are intentionally disabled."
             exit 1
           fi
-          BROWSER_PATH="$dashboard_browser" pnpm --filter @chatgpt-export-reader/dashboard test
+          BROWSER_PATH="$dashboard_browser" pnpm --filter @stemmatic/dashboard test
       - uses: actions/upload-pages-artifact@v4
         with:
           path: apps/dashboard/dist

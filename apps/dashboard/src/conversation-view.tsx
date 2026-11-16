@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'preact/hooks'
-import type { AnalyticsStatistics, RepeatedPhrase, TurnBin } from '@chatgpt-export-reader/core'
+import type { AnalyticsStatistics, RepeatedPhrase, TurnBin } from '@stemmatic/core'
 import type { AnalysisScope } from './analysis-scope.js'
 import type { WorkerClient } from './worker-client.js'
 import { useWorkerQuery } from './use-worker-query.js'

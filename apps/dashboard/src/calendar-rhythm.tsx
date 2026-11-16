@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import type { AnalyticsDay } from '@chatgpt-export-reader/core'
+import type { AnalyticsDay } from '@stemmatic/core'
 import { weekdayName } from './format.js'
 export function CalendarRhythm({
   days,

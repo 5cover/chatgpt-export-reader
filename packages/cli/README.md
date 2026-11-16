@@ -1,4 +1,4 @@
-# ChatGPT Export Reader
+# Stemmatic
 
 Turn a ChatGPT data export into Markdown documents, JSON artifacts, prompt-style
 transcripts, usage statistics, or recap evidence for an LLM.
@@ -6,7 +6,7 @@ transcripts, usage statistics, or recap evidence for an LLM.
 ## Install
 
 ```sh
-npm install --global chatgpt-export-reader
+npm install --global stemmatic
 ```
 
 The CLI requires Node.js 22 or later.
@@ -16,7 +16,7 @@ The CLI requires Node.js 22 or later.
 Render conversations into branch-aware Markdown files:
 
 ```sh
-chatgpt-export-reader markdown conversations.json \
+stemmatic markdown conversations.json \
   --export-format filesystem \
   --fs-path out/markdown
 ```
@@ -24,7 +24,7 @@ chatgpt-export-reader markdown conversations.json \
 Generate usage statistics as JSON, CSV, and SVG artifacts:
 
 ```sh
-chatgpt-export-reader stats conversations.json \
+stemmatic stats conversations.json \
   --export-format filesystem \
   --fs-path out/stats
 ```
@@ -32,7 +32,7 @@ chatgpt-export-reader stats conversations.json \
 Generate recap context and an LLM prompt for a date range:
 
 ```sh
-chatgpt-export-reader recap conversations.json \
+stemmatic recap conversations.json \
   --export-format filesystem \
   --fs-path out/recap \
   --time-zone Europe/Paris \
@@ -43,8 +43,8 @@ chatgpt-export-reader recap conversations.json \
 
 Recap evidence keeps repeated phrases at or above the selected score percentile for each role. The default is 90; use a value from 0 to 100 to adjust it.
 
-Run `chatgpt-export-reader --help` to list commands and options. Run
-`chatgpt-export-reader formats` to list supported input and artifact formats.
+Run `stemmatic --help` to list commands and options. Run
+`stemmatic formats` to list supported input and artifact formats.
 
 ## Privacy
 

@@ -1,4 +1,4 @@
-import type { TemporalMessageFilter } from '@chatgpt-export-reader/core'
+import type { TemporalMessageFilter } from '@stemmatic/core'
 export type Route =
   | { page: 'overview' | 'rhythm' | 'recap' | 'conversations' | 'about' | 'not-found' }
   | { page: 'projects'; id?: string }

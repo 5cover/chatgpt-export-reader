@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks'
-export const projectNamesKey = 'chatgpt-export-reader/project-names/v1'
+export const projectNamesKey = 'stemmatic/project-names/v1'
 export type ProjectNames = Record<string, string>
 const listeners = new Set<() => void>()
 function validateName(name: unknown): string {

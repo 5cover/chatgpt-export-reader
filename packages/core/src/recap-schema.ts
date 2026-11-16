@@ -9,7 +9,7 @@ export const recapContextFormats = ['yaml', 'yaml-anchors', 'toon'] as const
 export type RecapContextFormat = (typeof recapContextFormats)[number]
 
 export const recapContextSchema = z.object({
-  schema: z.literal('chatgpt-export-reader/recap/v1').describe('Format version for this recap context.'),
+  schema: z.literal('stemmatic/recap/v1').describe('Format version for this recap context.'),
   selection: z.object({
     timezone: z.string().describe('Timezone used for the inclusive calendar-date selection.'),
     requestedDateRange: z

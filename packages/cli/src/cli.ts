@@ -4,7 +4,7 @@ import { Command } from "@commander-js/extra-typings";
 import type {
   RecapContextFormat,
   RecapContextStrategy,
-} from "@chatgpt-export-reader/core";
+} from "@stemmatic/core";
 import { createWriteStream } from "fs";
 import { stat } from "fs/promises";
 import { stdout } from "process";
@@ -84,7 +84,7 @@ const exportFormats = [
 }[];
 
 const program = new Command()
-  .name("chatgpt-export-reader")
+  .name("stemmatic")
   .description("Turn ChatGPT exports into transcript, statistics, and recap artifacts.")
   .showHelpAfterError();
 

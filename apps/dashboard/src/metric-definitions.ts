@@ -1,4 +1,4 @@
-import type { AnalyticsDay, TimingStatistics } from '@chatgpt-export-reader/core'
+import type { AnalyticsDay, TimingStatistics } from '@stemmatic/core'
 import { formatDuration, formatNumber } from './format.js'
 export type Measure = 'usageMs' | 'thinkingMs' | 'prompts' | 'messages' | 'inputWords' | 'outputWords' | 'totalWords'
 export const measures: Record<

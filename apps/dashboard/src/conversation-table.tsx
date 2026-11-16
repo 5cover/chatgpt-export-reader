@@ -1,5 +1,5 @@
 import { useMemo } from 'preact/hooks'
-import type { ConversationAnalytics, TimingStatistics } from '@chatgpt-export-reader/core'
+import type { ConversationAnalytics, TimingStatistics } from '@stemmatic/core'
 import { SortableTable, type SortableColumn } from './sortable-table.js'
 import { ProjectLink, useProjectNames } from './project-identity.js'
 import { TextValue } from './ui.js'

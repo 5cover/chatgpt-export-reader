@@ -25,7 +25,7 @@ Implemented on 2026-11-12. The original audit below is retained as design ration
 - Chart and metric semantics: [daily-series-chart.tsx](src/daily-series-chart.tsx), [metric-definitions.ts](src/metric-definitions.ts), [methodology.tsx](src/methodology.tsx).
 - Evidence: [conversation-view.tsx](src/conversation-view.tsx), [temporal-view.tsx](src/temporal-view.tsx), [session-evidence.tsx](src/session-evidence.tsx), [worker-message.tsx](src/worker-message.tsx).
 - Identity and composition: [project-identity.tsx](src/project-identity.tsx), [projects.tsx](src/projects.tsx), [recap-view.tsx](src/recap-view.tsx).
-- Regression suite: [dashboard.test.mjs](test/dashboard.test.mjs). Run `pnpm --filter @chatgpt-export-reader/dashboard test`; set `BROWSER_PATH` for an existing Chromium outside the documented default. No browser downloads are performed.
+- Regression suite: [dashboard.test.mjs](test/dashboard.test.mjs). Run `pnpm --filter @stemmatic/dashboard test`; set `BROWSER_PATH` for an existing Chromium outside the documented default. No browser downloads are performed.
 - The deployment workflow also runs core, CLI, and production-dashboard interaction/accessibility regressions using an installed Chromium.
 - Minimum checks: `pnpm build:all`, `pnpm lint`, `pnpm test:lint`, core and CLI tests, and the dashboard browser suite.
 
@@ -77,7 +77,7 @@ Browser reproduction: filtering to February reduced the fixture to 29 chats; cli
 
 Fix the distinction between “argument omitted” and “clear this value.” Prefer an explicit options object over positional defaults.
 
-Evidence: [app.tsx:422](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:422), [reset handlers](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:565).
+Evidence: [app.tsx:422](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:422), [reset handlers](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:565).
 
 **2. Clearing message search leaves the previous filter applied.**
 
@@ -85,7 +85,7 @@ Evidence: [app.tsx:422](/home/raphael/repos/chatgpt-export-reader/apps/dashboard
 
 Browser reproduction: search for a nonexistent phrase, then clear the field. The textbox becomes empty while the outline still reports zero matches.
 
-Evidence: [app.tsx:139](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:139), [search handler](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:623).
+Evidence: [app.tsx:139](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:139), [search handler](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:623).
 
 **3. Independent message loads incorrectly cancel each other.**
 
@@ -95,7 +95,7 @@ Browser reproduction: opening two messages quickly expanded only the second.
 
 “Latest request wins” is appropriate for replacing a search result, not independently loading multiple messages. These need per-message pending state or batched requests.
 
-Evidence: [request creation](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:446), [response handling](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:304).
+Evidence: [request creation](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:446), [response handling](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:304).
 
 **4. Inline project naming can invalidate the entire stored mapping.**
 
@@ -105,7 +105,7 @@ Browser reproduction: a 201-character name saved and displayed, then all friendl
 
 Use the same validation for every write path; do not silently discard all valid entries because one entry is invalid.
 
-Evidence: [projects.tsx:15](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/projects.tsx:15), [validation and persistence](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/projects.tsx:17).
+Evidence: [projects.tsx:15](/home/raphael/repos/stemmatic/apps/dashboard/src/projects.tsx:15), [validation and persistence](/home/raphael/repos/stemmatic/apps/dashboard/src/projects.tsx:17).
 
 ### Other significant defects
 
@@ -115,7 +115,7 @@ Both charts read width only when constructed. Neither observes subsequent contai
 
 In Chromium, resizing from desktop to a 390px viewport left a 1,293px plot inside a 305px container. CSS clips it, so users lose access to part of the chart.
 
-Evidence: [daily-chart.tsx:35](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/daily-chart.tsx:35), [timing-chart.tsx:17](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/timing-chart.tsx:17).
+Evidence: [daily-chart.tsx:35](/home/raphael/repos/stemmatic/apps/dashboard/src/daily-chart.tsx:35), [timing-chart.tsx:17](/home/raphael/repos/stemmatic/apps/dashboard/src/timing-chart.tsx:17).
 
 **6. Zoom preservation is incomplete and sometimes inappropriate.**
 
@@ -123,7 +123,7 @@ Zoom is restored without checking whether the underlying date range changed. Con
 
 The intended rule should be explicit: preserve exploration when changing presentation; reconcile or reset it when changing scope.
 
-Evidence: [daily-chart.tsx:81](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/daily-chart.tsx:81), [Accordion unmounting](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:900).
+Evidence: [daily-chart.tsx:81](/home/raphael/repos/stemmatic/apps/dashboard/src/daily-chart.tsx:81), [Accordion unmounting](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:900).
 
 **7. Changing prompt modules unnecessarily invalidates recap evidence.**
 
@@ -133,19 +133,19 @@ The download also appears after the potentially very long prompt preview, spatia
 
 Separate evidence-generation settings from prompt-composition settings, and keep the generated artifact beside its generation controls.
 
-Evidence: [app.tsx:475](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:475), [results placement](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:838).
+Evidence: [app.tsx:475](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:475), [results placement](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:838).
 
 **8. Malformed conversation URLs can blank the application.**
 
 `decodeURIComponent(section)` is unguarded. Loading `#/conversations/%` produced an uncaught exception and an empty application.
 
-Evidence: [app.tsx:1879](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1879).
+Evidence: [app.tsx:1879](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1879).
 
 **9. Some displayed dates ignore the selected timezone.**
 
 Session cards and tables use `formatDate`, which always uses the browser timezone, while the surrounding dashboard can be in UTC mode.
 
-Evidence: [session cards](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1692), [formatter](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1919).
+Evidence: [session cards](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1692), [formatter](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1919).
 
 **10. Timeline selection does not reliably reveal the promised evidence.**
 
@@ -153,7 +153,7 @@ Selecting a timeline bin loads an outline page but does not open the collapsed M
 
 This can make a successful click appear ineffective or show evidence unrelated to the selected bin.
 
-Evidence: [timeline handler](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1350), [outline](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1352).
+Evidence: [timeline handler](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1350), [outline](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1352).
 
 ## 2. Accessibility and semantic markup
 
@@ -165,7 +165,7 @@ Adding an accessible name to a canvas container does not expose the plotted valu
 
 Provide a shared selected-day control and an accessible table representation of the same data.
 
-Evidence: [daily-chart.tsx:61](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/daily-chart.tsx:61), [timing-chart.tsx:19](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/timing-chart.tsx:19).
+Evidence: [daily-chart.tsx:61](/home/raphael/repos/stemmatic/apps/dashboard/src/daily-chart.tsx:61), [timing-chart.tsx:19](/home/raphael/repos/stemmatic/apps/dashboard/src/timing-chart.tsx:19).
 
 ### Selected controls expose state visually, not semantically
 
@@ -175,7 +175,7 @@ Chromium’s accessibility tree exposed these as ordinary buttons and links with
 
 Use a shared, labelled single-choice control, preferably native radio inputs where appropriate.
 
-Evidence: [calendar controls](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:693), [measure controls](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:939), [navigation](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:638).
+Evidence: [calendar controls](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:693), [measure controls](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:939), [navigation](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:638).
 
 ### Project import is not keyboard-operable
 
@@ -183,7 +183,7 @@ Import names is a label around a `display:none` file input. Neither element prov
 
 The main export importer already uses a real button connected to a hidden input; reuse that implementation.
 
-Evidence: [projects.tsx:57](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/projects.tsx:57), [style.css:97](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/style.css:97).
+Evidence: [projects.tsx:57](/home/raphael/repos/stemmatic/apps/dashboard/src/projects.tsx:57), [style.css:97](/home/raphael/repos/stemmatic/apps/dashboard/src/style.css:97).
 
 ### Inline editing loses focus
 
@@ -191,13 +191,13 @@ After saving a project name with Enter, focus moved to the document body. Escape
 
 An inline editor needs a full lifecycle: enter, focus/select, validate, save/cancel, announce errors, restore focus.
 
-Evidence: [projects.tsx:8](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/projects.tsx:8).
+Evidence: [projects.tsx:8](/home/raphael/repos/stemmatic/apps/dashboard/src/projects.tsx:8).
 
 ### Loading, errors, and navigation lack announcement/focus management
 
 Most status updates are ordinary text. Route changes do not move focus to the new page heading or update the document title. Users can remain focused on navigation while the page changes elsewhere.
 
-Evidence: [worker initialization and routing](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:192), [Status](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1788).
+Evidence: [worker initialization and routing](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:192), [Status](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1788).
 
 ### Disclosure and document structure are inconsistent
 
@@ -210,7 +210,7 @@ Evidence: [worker initialization and routing](/home/raphael/repos/chatgpt-export
 
 These are not all invalid HTML. They are failures to express the actual information and interaction hierarchy.
 
-Evidence: [Accordion](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:877), [message disclosure](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1373), [module controls](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:840).
+Evidence: [Accordion](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:877), [message disclosure](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1373), [module controls](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:840).
 
 ## 3. Design and ergonomics critique
 
@@ -222,7 +222,7 @@ More importantly, chats, sessions, estimated use, cumulative delay, prompts, tex
 
 The large persistent masthead, import actions, toolbar, and cards consume much of the first screen before showing an actual trend.
 
-Evidence: [Overview](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:920).
+Evidence: [Overview](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:920).
 
 **Recommendation:** prioritize estimated interaction time, prompting activity, active-day rhythm, and project allocation. Treat output volume and reply delay as secondary analytical lenses.
 
@@ -242,7 +242,7 @@ There is no first-class previous-period comparison, project-share evolution, or 
 
 The fixed “2 hours or more” sentence introduces a significance threshold without explaining why it matters to this user.
 
-Evidence: [time summary](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:932).
+Evidence: [time summary](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:932).
 
 **Recommendation:** compare equivalent periods and expose drivers. If a time budget exists, make it a personal reference, not an implied universal threshold for excessive use.
 
@@ -252,7 +252,7 @@ The main project table cannot sort by time or volume. All overview project links
 
 Conversation views do not carry the project context forward.
 
-Evidence: [project links](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:934), [Projects](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/projects.tsx:60).
+Evidence: [project links](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:934), [Projects](/home/raphael/repos/stemmatic/apps/dashboard/src/projects.tsx:60).
 
 **Recommendation:** give projects addressable detail views and make project selection a reusable filter throughout the dashboard.
 
@@ -262,7 +262,7 @@ The name promises behavioral understanding, but the page concentrates on session
 
 The scatter plot has no numeric axis labels, uses tiny overlapping links, and opens the first conversation of a potentially multi-conversation session. Repeated phrases elsewhere primarily support copying, not investigating occurrences.
 
-Evidence: [Patterns](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:974), [scatter](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1631), [phrase interaction](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1448).
+Evidence: [Patterns](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:974), [scatter](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1631), [phrase interaction](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1448).
 
 These views need clearer questions and evidence paths, not additional indicators.
 
@@ -275,7 +275,7 @@ These views need clearer questions and evidence paths, not additional indicators
 - “Reply latency” is a cumulative duration, not a typical latency.
 - “Longest sessions” actually means sessions with the most prompts.
 
-Evidence: [temporal indicators](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1163), [conversation columns](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1960), [duration formatting](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:1931).
+Evidence: [temporal indicators](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1163), [conversation columns](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1960), [duration formatting](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:1931).
 
 A metric needs a shared definition, aggregation label, unit formatting, and explanation.
 
@@ -283,7 +283,7 @@ A metric needs a shared definition, aggregation label, unit formatting, and expl
 
 At 390px, navigation overflowed the page. Calendar cells were approximately 7px wide, their numbers transparent, and their tooltips available only through nonfocusable cells. Avoiding horizontal scrolling has removed practical access to values.
 
-Evidence: [navigation CSS](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/style.css:360), [calendar CSS](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/style.css:641).
+Evidence: [navigation CSS](/home/raphael/repos/stemmatic/apps/dashboard/src/style.css:360), [calendar CSS](/home/raphael/repos/stemmatic/apps/dashboard/src/style.css:641).
 
 A compact calendar should have a usable selected-day inspector or an alternative layout, not merely smaller cells.
 
@@ -304,12 +304,12 @@ The most valuable extractions are domain components, not a generic collection of
 Specific structural concerns:
 
 - **`app.tsx` owns too many responsibilities:** routing, worker orchestration, all page states, formatting, chart adapters, tables, and most views.
-- **Worker contracts are duplicated:** request/response types are separately maintained, while the UI casts received messages. Share a typed protocol and request client. [app.tsx:2080](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:2080), [stats-worker.ts:30](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/stats-worker.ts:30).
+- **Worker contracts are duplicated:** request/response types are separately maintained, while the UI casts received messages. Share a typed protocol and request client. [app.tsx:2080](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:2080), [stats-worker.ts:30](/home/raphael/repos/stemmatic/apps/dashboard/src/stats-worker.ts:30).
 - **Worker lifecycle failures are not handled:** there is no worker `error`/`messageerror` recovery path.
-- **Import failures lose useful diagnostics:** normalization catches every exception and retains only a skipped count. Users cannot distinguish unsupported records from malformed data or investigate their effect. [stats-worker.ts:350](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/stats-worker.ts:350).
-- **Expensive work is unnecessarily eager:** repeated-language analysis starts on conversation entry even when its section remains closed. [app.tsx:237](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/app.tsx:237).
+- **Import failures lose useful diagnostics:** normalization catches every exception and retains only a skipped count. Users cannot distinguish unsupported records from malformed data or investigate their effect. [stats-worker.ts:350](/home/raphael/repos/stemmatic/apps/dashboard/src/stats-worker.ts:350).
+- **Expensive work is unnecessarily eager:** repeated-language analysis starts on conversation entry even when its section remains closed. [app.tsx:237](/home/raphael/repos/stemmatic/apps/dashboard/src/app.tsx:237).
 - **Large collections are rendered wholesale:** conversation tables and scatter points have no bounded rendering strategy.
-- **CSS encodes structural accidents:** accordion rules strip styling from nested cards instead of components expressing their intended presentation. Multiple control variants duplicate almost identical styles. [style.css:607](/home/raphael/repos/chatgpt-export-reader/apps/dashboard/src/style.css:607).
+- **CSS encodes structural accidents:** accordion rules strip styling from nested cards instead of components expressing their intended presentation. Multiple control variants duplicate almost identical styles. [style.css:607](/home/raphael/repos/stemmatic/apps/dashboard/src/style.css:607).
 
 The existing `SortableTable` and `HeatmapTable` are useful foundations. Local worker processing, escaped message text, archive expansion limits, and separation of core analytics are also worth preserving.
 

@@ -61,7 +61,7 @@ export type RecapDerivedMetrics = AnalyticsDerivedMetrics
 export type { Distribution }
 
 export type RecapDocument = {
-  schema: 'chatgpt-export-reader/recap/v1'
+  schema: 'stemmatic/recap/v1'
   selection: {
     timezone: string
     requestedDateRange: { startDate: string; endDate: string }
@@ -75,7 +75,7 @@ export type RecapDocument = {
 }
 
 const recapDocumentSchema = z.object({
-  schema: z.literal('chatgpt-export-reader/recap/v1'),
+  schema: z.literal('stemmatic/recap/v1'),
   selection: z.object({
     timezone: z.string(),
     requestedDateRange: z.object({ startDate: z.string(), endDate: z.string() }),
@@ -202,7 +202,7 @@ export function buildRecap(chats: Iterable<Chat>, options: RecapOptions = {}): R
   )
 
   const document = {
-    schema: 'chatgpt-export-reader/recap/v1',
+    schema: 'stemmatic/recap/v1',
     selection: {
       timezone: timeZone,
       requestedDateRange: { startDate: requestedStart, endDate: requestedEnd },

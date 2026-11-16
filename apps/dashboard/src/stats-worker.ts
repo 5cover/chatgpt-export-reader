@@ -16,7 +16,7 @@ import {
   type Chat,
   type RepeatedPhraseAnalysis,
   type TemporalMessageSlice,
-} from '@chatgpt-export-reader/core'
+} from '@stemmatic/core'
 import { period, previousPeriod, type AnalysisScope } from './analysis-scope.js'
 import type {
   WorkerRequest,

@@ -6,7 +6,7 @@ import {
   type RecapContextFormat,
   type RecapContextStrategy,
   type RecapPromptModule,
-} from '@chatgpt-export-reader/core'
+} from '@stemmatic/core'
 import { scopeKey, type AnalysisScope } from './analysis-scope.js'
 import type { WorkerClient } from './worker-client.js'
 import { TimeZoneSelect } from './scope-controls.js'
